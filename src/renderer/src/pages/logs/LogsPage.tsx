@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react'
+﻿import { useState, useMemo, useCallback, useRef } from 'react'
 import { useListData } from '../../hooks/useListData'
 import { useDebounce } from '../../hooks/useDebounce'
 import { Activity, Loader2 } from 'lucide-react'
@@ -11,9 +11,9 @@ export function LogsPage() {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const { items, loading, loadingMore, hasMore, loadMore, sortField, sortDirection } = useListData<Record<string, unknown>>({
-    endpoint: 'laoag_logs',
+    endpoint: 'santa_logs',
     sortParam: 'date|desc',
-    dataKey: 'laoag_logs',
+    dataKey: 'santa_logs',
     searchQuery: debouncedSearch
   })
   const ticking = useRef(false)

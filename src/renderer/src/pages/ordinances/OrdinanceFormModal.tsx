@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Modal } from '../../components/ui/Modal'
-import { FormField, Input, Select } from '../../components/ui/FormField'
+import { FormField, Input, Select, TextArea } from '../../components/ui/FormField'
 import { FileUploadField } from '../../components/ui/FileUploadField'
 import { Spinner } from '../../components/ui/Spinner'
 import { addDocumentWithFile, updateDocumentWithFile } from '../../lib/firebase'
 import type { Ordinance } from '../../types'
-import toast from 'react-hot-toast'
+import { notify } from '../../lib/notify'
 import { toInputDate } from '../../lib/utils'
+import { useOfficialsForForm } from '../../hooks/useOfficialsForForm'
 
 const ACTION_SP_OPTIONS = [
   { value: 'Approved', label: 'Approved' },
@@ -38,12 +39,16 @@ export function OrdinanceFormModal({ open, onClose, onSuccess, logActivity, ordi
   const isEdit = !!ordinance
   const [saving, setSaving] = useState(false)
   const [file, setFile] = useState<File | null>(null)
+  const { loadingOfficials, selectedTerm, setSelectedTerm, termOptions, officialNames, authorOptions } =
+    useOfficialsForForm(open)
 
   const [form, setForm] = useState({
     ordinanceNumber: '',
+    series: '',
     category: 'General Ordinance',
     title: '',
     author: '',
+    coSponsors: [] as string[],
     tag: '',
     dateApprovedSp: '',
     actionSp: '',
@@ -64,9 +69,11 @@ export function OrdinanceFormModal({ open, onClose, onSuccess, logActivity, ordi
       if (ordinance) {
         setForm({
           ordinanceNumber: ordinance.ordinanceNumber ?? '',
+          series: ordinance.series ?? '',
           category: ordinance.category ?? 'General Ordinance',
           title: ordinance.title ?? '',
           author: ordinance.author ?? '',
+          coSponsors: Array.isArray(ordinance.coSponsors) ? ordinance.coSponsors : ordinance.coSponsors ? ordinance.coSponsors.split(', ').filter(Boolean) : [],
           tag: ordinance.tag ?? '',
           dateApprovedSp: toInputDate(ordinance.dateApprovedSp),
           actionSp: ordinance.actionSp ?? '',
@@ -84,9 +91,11 @@ export function OrdinanceFormModal({ open, onClose, onSuccess, logActivity, ordi
       } else {
         setForm({
           ordinanceNumber: '',
+          series: '',
           category: 'General Ordinance',
           title: '',
           author: '',
+          coSponsors: [],
           tag: '',
           dateApprovedSp: '',
           actionSp: '',
@@ -111,28 +120,33 @@ export function OrdinanceFormModal({ open, onClose, onSuccess, logActivity, ordi
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
       setForm((f) => ({ ...f, [k]: e.target.value }))
 
+  const coSponsorList = form.coSponsors
+  const toggleCoSponsor = (name: string) => {
+    const updated = coSponsorList.includes(name)
+      ? coSponsorList.filter((n) => n !== name)
+      : [...coSponsorList, name]
+    setForm((f) => ({ ...f, coSponsors: updated }))
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.ordinanceNumber.trim() || !form.title.trim() || !form.author.trim()) {
-      toast.error('Ordinance Number, Title, and Author are required')
-      return
-    }
-    if (!isEdit && !file) {
-      toast.error('Please attach a file')
+      notify.error('Ordinance Number, Title, and Author are required')
       return
     }
     setSaving(true)
     try {
       const finalActionSp = form.actionSp === 'Others' ? form.actionSpOther : form.actionSp
-      const finalActionMayor =
-        form.actionMayor === 'Others' ? form.actionMayorOther : form.actionMayor
+      const finalActionMayor = form.actionMayor === 'Others' ? form.actionMayorOther : form.actionMayor
       const finalActionTSp = form.actionTSp === 'Others' ? form.actionTSpOther : form.actionTSp
 
       const data = {
         ordinanceNumber: form.ordinanceNumber,
+        series: form.series,
         category: form.category,
         title: form.title,
         author: form.author,
+        coSponsors: form.coSponsors,
         tag: form.tag,
         dateApprovedSp: form.dateApprovedSp,
         actionSp: finalActionSp,
@@ -150,19 +164,19 @@ export function OrdinanceFormModal({ open, onClose, onSuccess, logActivity, ordi
 
       if (isEdit) {
         await updateDocumentWithFile(
-          'laoag_ordinances',
+          'santa_ordinances',
           ordinance!.id,
           data,
           'GeneralOrdinances',
           `OrdinanceNo._${form.ordinanceNumber}`,
           file,
-          ordinance?.filePath ?? '',
+          ordinance?.fileUrl ?? '',
           ordinance?.fileType ?? ''
         )
         await logActivity(`Updated Ordinance Number ${form.ordinanceNumber}`)
       } else {
         await addDocumentWithFile(
-          'laoag_ordinances',
+          'santa_ordinances',
           data,
           'GeneralOrdinances',
           `OrdinanceNo._${form.ordinanceNumber}`,
@@ -170,10 +184,10 @@ export function OrdinanceFormModal({ open, onClose, onSuccess, logActivity, ordi
         )
         await logActivity(`Created Ordinance Number ${form.ordinanceNumber}`)
       }
-      toast.success(isEdit ? 'Ordinance updated' : 'Ordinance created')
+      notify.success(isEdit ? 'Ordinance updated' : 'Ordinance created')
       onSuccess()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save. Please try again.')
+      notify.error(err instanceof Error ? err.message : 'Failed to save. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -207,47 +221,88 @@ export function OrdinanceFormModal({ open, onClose, onSuccess, logActivity, ordi
     >
       <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
         <FormField label="Ordinance Number" required>
-          <Input
-            value={form.ordinanceNumber}
-            onChange={set('ordinanceNumber')}
-            placeholder="e.g. 2024-001"
-          />
+          <Input type="number" min="1" value={form.ordinanceNumber} onChange={set('ordinanceNumber')} placeholder="e.g. 1" />
+        </FormField>
+        <FormField label="Series">
+          <Input value={form.series} onChange={set('series')} placeholder="e.g. Series of 2024" />
         </FormField>
         <FormField label="Category" required>
           <Select options={CATEGORIES} value={form.category} onChange={set('category')} />
         </FormField>
         <FormField label="Title" required className="col-span-2">
-          <Input value={form.title} onChange={set('title')} placeholder="Ordinance title" />
+          <TextArea value={form.title} onChange={set('title')} rows={3} placeholder="Ordinance title" />
         </FormField>
+
+        {/* Legislative Term filter */}
+        <FormField label="Legislative Term" className="col-span-2">
+          {loadingOfficials ? (
+            <div className="input-field flex items-center justify-center"><Spinner size="sm" /></div>
+          ) : (
+            <Select
+              options={termOptions}
+              value={selectedTerm}
+              onChange={(e) => {
+                setSelectedTerm(e.target.value)
+                setForm((f) => ({ ...f, author: '', coSponsors: [] }))
+              }}
+            />
+          )}
+        </FormField>
+
         <FormField label="Author" required>
-          <Input value={form.author} onChange={set('author')} placeholder="Author name" />
+          {loadingOfficials ? (
+            <div className="input-field flex items-center justify-center"><Spinner size="sm" /></div>
+          ) : (
+            <Select
+              options={authorOptions}
+              value={form.author}
+              onChange={set('author')}
+              placeholder="Select author"
+            />
+          )}
         </FormField>
-        <FormField label="Tag">
+
+        <FormField label="Co-Sponsors">
+          {loadingOfficials ? (
+            <div className="input-field flex items-center justify-center"><Spinner size="sm" /></div>
+          ) : (
+            <div className="border border-slate-200 rounded-lg p-3 max-h-36 overflow-y-auto grid grid-cols-1 gap-1.5">
+              {officialNames.length === 0 ? (
+                <p className="text-xs text-slate-400">No officials for selected term</p>
+              ) : (
+                officialNames.map((name) => (
+                  <label key={name} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={coSponsorList.includes(name)}
+                      onChange={() => toggleCoSponsor(name)}
+                    />
+                    {name}
+                  </label>
+                ))
+              )}
+            </div>
+          )}
+        </FormField>
+
+        <FormField label="Tag" className="col-span-2">
           <Input value={form.tag} onChange={set('tag')} placeholder="Keywords/tags" />
         </FormField>
 
         <div className="col-span-2 border-t border-slate-100 pt-3 mt-1">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">
-            Sangguniang Panlalawigan
+            Sangguniang Bayan
           </p>
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Date Approved (SP)">
+            <FormField label="Date Approved (S.B.)">
               <Input type="date" value={form.dateApprovedSp} onChange={set('dateApprovedSp')} />
             </FormField>
-            <FormField label="Action of SP">
-              <Select
-                options={ACTION_SP_OPTIONS}
-                value={form.actionSp}
-                onChange={set('actionSp')}
-              />
+            <FormField label="Action of S.B.">
+              <Select options={ACTION_SP_OPTIONS} value={form.actionSp} onChange={set('actionSp')} />
             </FormField>
             {form.actionSp === 'Others' && (
               <FormField label="Specify Action" className="col-span-2">
-                <Input
-                  value={form.actionSpOther}
-                  onChange={set('actionSpOther')}
-                  placeholder="Specify action"
-                />
+                <Input value={form.actionSpOther} onChange={set('actionSpOther')} placeholder="Specify action" />
               </FormField>
             )}
           </div>
@@ -259,26 +314,14 @@ export function OrdinanceFormModal({ open, onClose, onSuccess, logActivity, ordi
           </p>
           <div className="grid grid-cols-2 gap-4">
             <FormField label="Date Transmitted to Mayor">
-              <Input
-                type="date"
-                value={form.transmittedDateMayor}
-                onChange={set('transmittedDateMayor')}
-              />
+              <Input type="date" value={form.transmittedDateMayor} onChange={set('transmittedDateMayor')} />
             </FormField>
             <FormField label="Action of Mayor">
-              <Select
-                options={ACTION_MAYOR_OPTIONS}
-                value={form.actionMayor}
-                onChange={set('actionMayor')}
-              />
+              <Select options={ACTION_MAYOR_OPTIONS} value={form.actionMayor} onChange={set('actionMayor')} />
             </FormField>
             {form.actionMayor === 'Others' && (
               <FormField label="Specify Action" className="col-span-2">
-                <Input
-                  value={form.actionMayorOther}
-                  onChange={set('actionMayorOther')}
-                  placeholder="Specify action"
-                />
+                <Input value={form.actionMayorOther} onChange={set('actionMayorOther')} placeholder="Specify action" />
               </FormField>
             )}
           </div>
@@ -286,30 +329,18 @@ export function OrdinanceFormModal({ open, onClose, onSuccess, logActivity, ordi
 
         <div className="col-span-2 border-t border-slate-100 pt-3">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">
-            Return from SP
+            Return from S.B.
           </p>
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Date Transmitted to SP">
-              <Input
-                type="date"
-                value={form.transmittedDateSP}
-                onChange={set('transmittedDateSP')}
-              />
+            <FormField label="Date Transmitted to S.B.">
+              <Input type="date" value={form.transmittedDateSP} onChange={set('transmittedDateSP')} />
             </FormField>
-            <FormField label="Action of SP">
-              <Select
-                options={ACTION_MAYOR_OPTIONS}
-                value={form.actionTSp}
-                onChange={set('actionTSp')}
-              />
+            <FormField label="Action of S.B.">
+              <Select options={ACTION_MAYOR_OPTIONS} value={form.actionTSp} onChange={set('actionTSp')} />
             </FormField>
             {form.actionTSp === 'Others' && (
               <FormField label="Specify Action" className="col-span-2">
-                <Input
-                  value={form.actionTSpOther}
-                  onChange={set('actionTSpOther')}
-                  placeholder="Specify action"
-                />
+                <Input value={form.actionTSpOther} onChange={set('actionTSpOther')} placeholder="Specify action" />
               </FormField>
             )}
           </div>
@@ -330,21 +361,11 @@ export function OrdinanceFormModal({ open, onClose, onSuccess, logActivity, ordi
         </div>
 
         <div className="col-span-2 border-t border-slate-100 pt-3">
-          <FileUploadField
-            value={file}
-            onChange={setFile}
-            required={!isEdit}
-            error={!isEdit && !file ? undefined : undefined}
-          />
-          {isEdit && ordinance?.filePath && !file && (
+          <FileUploadField value={file} onChange={setFile} />
+          {isEdit && ordinance?.fileUrl && !file && (
             <p className="text-xs text-slate-500 mt-1.5">
               Current file:{' '}
-              <a
-                href={ordinance.filePath}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:underline"
-              >
+              <a href={ordinance.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                 View attached file
               </a>
             </p>

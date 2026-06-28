@@ -1,8 +1,8 @@
-import { useState, useMemo, useEffect } from 'react'
+﻿import { useState, useMemo, useEffect } from 'react'
 import { useListData } from '../../hooks/useListData'
 import { useDebounce } from '../../hooks/useDebounce'
 import { PenTool, Plus, RefreshCw, Pencil, Trash2, ExternalLink } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { notify } from '../../lib/notify'
 import {
   addDocument,
   addDocumentWithCount,
@@ -16,7 +16,8 @@ import {
 import { useAuthStore } from '../../store/authStore'
 import { Layout, PageContainer } from '../../components/layout/Layout'
 import { PageHeader } from '../../components/ui/PageHeader'
-import { DataTable, Column } from '../../components/ui/DataTable'
+import { DataTable, Column, useColumnVisibility, ColumnsButton } from '../../components/ui/DataTable'
+import { SessionSelect } from '../../components/ui/SessionSelect'
 import { Badge } from '../../components/ui/Badge'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Modal } from '../../components/ui/Modal'
@@ -77,7 +78,7 @@ function EditedCorrectionModal({
     setContent('')
     setExisting(null)
     setLoading(true)
-    queryDocuments<EditCorrection>('laoag_edited_correction', 'orNo', addendumNo)
+    queryDocuments<EditCorrection>('santa_edited_correction', 'orNo', addendumNo)
       .then((docs) => {
         const match = docs.find(
           (d) => (d.sessionNo ?? '').toLowerCase() === (sessionNo ?? '').toLowerCase()
@@ -87,33 +88,33 @@ function EditedCorrectionModal({
           setContent(match.content ?? '')
         }
       })
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load'))
+      .catch((err) => notify.error(err instanceof Error ? err.message : 'Failed to load'))
       .finally(() => setLoading(false))
   }, [open, addendumNo, sessionNo])
 
   async function handleSave() {
     if (!content.trim()) {
-      toast.error('Content is required')
+      notify.error('Content is required')
       return
     }
     setSaving(true)
     try {
       if (existing)
-        await updateDocument('laoag_edited_correction', existing.id, {
+        await updateDocument('santa_edited_correction', existing.id, {
           orNo: addendumNo,
           sessionNo,
           content
         })
       else
-        await addDocumentWithCount('laoag_edited_correction', {
+        await addDocumentWithCount('santa_edited_correction', {
           orNo: addendumNo,
           sessionNo,
           content
         })
-      toast.success(existing ? 'Updated Successfully!' : 'Added Successfully!')
+      notify.success(existing ? 'Updated Successfully!' : 'Added Successfully!')
       onClose()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save')
+      notify.error(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
     }
@@ -201,11 +202,7 @@ function CorrectionFormModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.addendumNo.trim() || !form.title.trim()) {
-      toast.error('Addendum Number and Title are required')
-      return
-    }
-    if (!isEdit && !file) {
-      toast.error('Please attach a file')
+      notify.error('Addendum Number and Title are required')
       return
     }
     setSaving(true)
@@ -219,28 +216,28 @@ function CorrectionFormModal({
 
       if (isEdit)
         await updateDocumentWithFile(
-          'laoag_correction',
+          'santa_correction',
           record!.id,
           data,
           'Addendum',
           `${form.sessionNo}${form.title}${form.category}`,
           file,
-          record?.filePath ?? '',
+          record?.fileUrl ?? '',
           record?.fileType ?? ''
         )
       else
         await addDocumentWithFile(
-          'laoag_correction',
+          'santa_correction',
           data,
           'Addendum',
           `${form.sessionNo}${form.title}${form.category}`,
           file
         )
       await logActivity(`${isEdit ? 'Updated' : 'Created'} Addendum ${form.addendumNo}`)
-      toast.success(isEdit ? 'Updated' : 'Created')
+      notify.success(isEdit ? 'Updated' : 'Created')
       onSuccess()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save')
+      notify.error(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
     }
@@ -281,10 +278,10 @@ function CorrectionFormModal({
     >
       <form className="grid grid-cols-2 gap-4">
         <FormField label="Addendum Number" required>
-          <Input value={form.addendumNo} onChange={set('addendumNo')} />
+          <Input type="number" min="1" value={form.addendumNo} onChange={set('addendumNo')} placeholder="e.g. 1" />
         </FormField>
         <FormField label="Session Number">
-          <Input value={form.sessionNo} onChange={set('sessionNo')} />
+          <SessionSelect value={form.sessionNo} onChange={(v) => setForm((f) => ({ ...f, sessionNo: v }))} />
         </FormField>
         <FormField label="Title" required className="col-span-2">
           <TextArea value={form.title} onChange={set('title')} rows={5} />
@@ -293,12 +290,12 @@ function CorrectionFormModal({
           <Select options={CATEGORIES} value={form.category} onChange={set('category')} />
         </FormField>
         <div className="col-span-2">
-          <FileUploadField value={file} onChange={setFile} required={!isEdit} />
-          {isEdit && record?.filePath && !file && (
+          <FileUploadField value={file} onChange={setFile} />
+          {isEdit && record?.fileUrl && !file && (
             <p className="text-xs text-slate-500 mt-1.5">
               Current file:{' '}
               <a
-                href={record.filePath}
+                href={record.fileUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:underline"
@@ -322,13 +319,14 @@ function CorrectionFormModal({
 }
 
 export function CorrectionsPage() {
+  const { hiddenColumns, toggleColumn } = useColumnVisibility(columns)
   const user = useAuthStore((s) => s.user)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const { items, loading, loadingMore, hasMore, reload, loadMore, sortField, sortDirection } = useListData<
     Record<string, unknown>
   >({
-    endpoint: 'laoag_correction',
+    endpoint: 'santa_correction',
     sortParam: 'addendumNo|desc',
     dataKey: 'correction',
     searchQuery: debouncedSearch
@@ -363,7 +361,7 @@ export function CorrectionsPage() {
       }) +
       ' ' +
       new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
-    await addDocument('laoag_logs', { name, activity, date, year: new Date().getFullYear() })
+    await addDocumentWithCount('santa_logs', { name, activity, date, year: new Date().getFullYear() })
   }
 
   async function handleDelete() {
@@ -371,13 +369,13 @@ export function CorrectionsPage() {
     setDeleting(true)
     try {
       await deleteDocumentWithFile(
-        'laoag_correction',
+        'santa_correction',
         selected.id,
         'Addendum',
         `${selected.sessionNo}${selected.title}${selected.category}`
       )
       const editedDocs = await queryDocuments<EditCorrection>(
-        'laoag_edited_correction',
+        'santa_edited_correction',
         'orNo',
         selected.addendumNo
       )
@@ -385,15 +383,15 @@ export function CorrectionsPage() {
         (d) => (d.sessionNo ?? '').toLowerCase() === (selected.sessionNo ?? '').toLowerCase()
       )
       if (editedMatch) {
-        await deleteDocumentWithCount('laoag_edited_correction', editedMatch.id)
+        await deleteDocumentWithCount('santa_edited_correction', editedMatch.id)
       }
       await logActivity(`Deleted Addendum ${selected.addendumNo}`)
-      toast.success('Deleted')
+      notify.success('Deleted')
       setShowDelete(false)
       setSelected(null)
       reload()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete')
+      notify.error(err instanceof Error ? err.message : 'Failed to delete')
     } finally {
       setDeleting(false)
     }
@@ -408,16 +406,17 @@ export function CorrectionsPage() {
           icon={<PenTool size={20} />}
           actions={
             <>
+              <ColumnsButton columns={columns} hiddenColumns={hiddenColumns} onToggle={toggleColumn} />
               <button className="btn-ghost" onClick={reload}>
                 <RefreshCw size={15} />
                 Refresh
               </button>
               {selected && (
                 <>
-                  {selected.filePath && (
+                  {selected.fileUrl && (
                     <button
                       className="btn-ghost"
-                      onClick={() => window.open(selected.filePath, '_blank')}
+                      onClick={() => window.open(selected.fileUrl, '_blank')}
                     >
                       <ExternalLink size={15} />
                       Open
@@ -440,22 +439,23 @@ export function CorrectionsPage() {
             </>
           }
         />
-        <div className="flex justify-end mb-4 flex-shrink-0">
+        <div className="flex justify-end mb-4 shrink-0">
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="Search by addendum no., session no., title..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="input-field !w-56 !py-2"
+            className="input-field w-56! py-2!"
           />
         </div>
         <div className="card flex flex-col flex-1 min-h-0">
           <DataTable
             columns={columns}
             data={filtered}
+            hiddenColumns={hiddenColumns}
             selectedId={selected?.id}
             onRowClick={setSelected}
-            onRowDoubleClick={() => selected?.filePath && window.open(selected.filePath, '_blank')}
+            onRowDoubleClick={() => selected?.fileUrl && window.open(selected.fileUrl, '_blank')}
             loading={loading}
             emptyMessage="No correction records found"
             loadingMore={loadingMore}
@@ -477,6 +477,7 @@ export function CorrectionsPage() {
             onClose={() => setShowEdit(false)}
             onSuccess={() => {
               setShowEdit(false)
+              setSelected(null)
               reload()
             }}
             logActivity={logActivity}

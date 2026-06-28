@@ -1,11 +1,11 @@
 ﻿import { useMemo, useState } from 'react'
 import { FileCheck, Plus, RefreshCw, Pencil, Trash2, ExternalLink } from 'lucide-react'
-import toast from 'react-hot-toast'
-import { addDocument, deleteDocumentWithFile } from '../../lib/firebase'
+import { notify } from '../../lib/notify'
+import { addDocument, addDocumentWithCount, deleteDocumentWithFile } from '../../lib/firebase'
 import { useAuthStore } from '../../store/authStore'
 import { Layout, PageContainer } from '../../components/layout/Layout'
 import { PageHeader } from '../../components/ui/PageHeader'
-import { DataTable, Column } from '../../components/ui/DataTable'
+import { DataTable, Column, useColumnVisibility, ColumnsButton } from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import type { Resolution } from '../../types'
@@ -25,6 +25,7 @@ const catColor = (c: string) => {
 
 const columns: Column<Resolution>[] = [
   { key: 'resolutionNumber', header: 'Res. No.', width: 'w-28' },
+  { key: 'series', header: 'Series', width: 'w-32' },
   {
     key: 'category',
     header: 'Category',
@@ -42,10 +43,11 @@ const columns: Column<Resolution>[] = [
     width: 'w-32',
     render: (r) => <span className="text-xs">{formatDate(r.dateApprovedSp)}</span>
   },
-  { key: 'actionSp', header: 'Action (SP)', width: 'w-28' }
+  { key: 'actionSp', header: 'Action (SB)', width: 'w-28' }
 ]
 
 export function ResolutionsPage() {
+  const { hiddenColumns, toggleColumn } = useColumnVisibility(columns)
   const user = useAuthStore((s) => s.user)
   const [category, setCategory] = useState('General Resolutions')
   const [search, setSearch] = useState('')
@@ -57,7 +59,7 @@ export function ResolutionsPage() {
   const { items, loading, loadingMore, hasMore, reload, loadMore, sortField, sortDirection } = useListData<
     Record<string, unknown>
   >({
-    endpoint: 'laoag_resolutions',
+    endpoint: 'santa_resolutions',
     sortParam: 'resolutionNumber|desc',
     dataKey: 'resolution',
     limit: 100,
@@ -96,7 +98,7 @@ export function ResolutionsPage() {
       }) +
       ' ' +
       new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
-    await addDocument('laoag_logs', { name, activity, date, year: new Date().getFullYear() })
+    await addDocumentWithCount('santa_logs', { name, activity, date, year: new Date().getFullYear() })
   }
 
   async function handleDelete() {
@@ -104,26 +106,26 @@ export function ResolutionsPage() {
     setDeleting(true)
     try {
       await deleteDocumentWithFile(
-        'laoag_resolutions',
+        'santa_resolutions',
         selected.id,
-        'Resolutions',
+        'GeneralResolutions',
         `ResolutionNo._${selected.resolutionNumber}`
       )
       await logActivity(`Deleted Resolution Number ${selected.resolutionNumber}`)
-      toast.success('Resolution deleted')
+      notify.success('Resolution deleted')
       setShowDelete(false)
       setSelected(null)
       reload()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete')
+      notify.error(err instanceof Error ? err.message : 'Failed to delete')
     } finally {
       setDeleting(false)
     }
   }
 
   function openFile() {
-    if (selected?.filePath) window.open(selected.filePath, '_blank')
-    else toast.error('No file attached')
+    if (selected?.fileUrl) window.open(selected.fileUrl, '_blank')
+    else notify.error('No file attached')
   }
 
   return (
@@ -135,6 +137,7 @@ export function ResolutionsPage() {
           icon={<FileCheck size={20} />}
           actions={
             <>
+              <ColumnsButton columns={columns} hiddenColumns={hiddenColumns} onToggle={toggleColumn} />
               <button className="btn-ghost" onClick={reload}>
                 <RefreshCw size={15} />
                 Refresh
@@ -225,6 +228,7 @@ export function ResolutionsPage() {
           <DataTable
             columns={columns}
             data={filtered}
+            hiddenColumns={hiddenColumns}
             selectedId={selected?.id}
             onRowClick={(row) => setSelected(row as unknown as Resolution)}
             onRowDoubleClick={openFile}
@@ -249,6 +253,7 @@ export function ResolutionsPage() {
             onClose={() => setShowEdit(false)}
             onSuccess={() => {
               setShowEdit(false)
+              setSelected(null)
               reload()
             }}
             logActivity={logActivity}

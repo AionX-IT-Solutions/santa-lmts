@@ -3,18 +3,37 @@ import { join } from 'path'
 import { autoUpdater } from 'electron-updater'
 import icon from '../../resources/icon.png?asset'
 
+const isDev = !app.isPackaged
+
+function watchWindowShortcuts(window: BrowserWindow): void {
+  const { webContents } = window
+  webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    if (isDev && input.code === 'F12') {
+      if (webContents.isDevToolsOpened()) {
+        webContents.closeDevTools()
+      } else {
+        webContents.openDevTools({ mode: 'undocked' })
+      }
+    }
+    if (!isDev && input.code === 'KeyR' && (input.control || input.meta)) {
+      event.preventDefault()
+    }
+  })
+}
+
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
-    width: 600,
+    width: 960,
     height: 600,
-    minWidth: 600,
+    minWidth: 960,
     minHeight: 600,
     resizable: false,
     center: true,
     show: false,
     autoHideMenuBar: true,
     titleBarStyle: 'default',
-    title: 'LMTS - Laoag Legislative Management & Tracking System',
+    title: 'LMTS - Municipality of Santa Legislative Management & Tracking System',
     icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -22,11 +41,12 @@ function createWindow(): BrowserWindow {
       webSecurity: false
     }
   })
-  if (!app.isPackaged) {
-    mainWindow.webContents.openDevTools()
-  }
+
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+    if (isDev) {
+      mainWindow.webContents.openDevTools({ mode: 'undocked' })
+    }
   })
 
   mainWindow.on('close', (e) => {
@@ -35,6 +55,10 @@ function createWindow(): BrowserWindow {
       .executeJavaScript("localStorage.removeItem('lmts-auth')")
       .catch(() => {})
       .finally(() => mainWindow.destroy())
+  })
+
+  ipcMain.on('set-zoom-factor', (_e, factor: number) => {
+    mainWindow.webContents.setZoomFactor(Math.max(0.5, Math.min(2, factor)))
   })
 
   ipcMain.on('window-maximize', () => {
@@ -46,8 +70,8 @@ function createWindow(): BrowserWindow {
   ipcMain.on('window-restore-login', () => {
     mainWindow.unmaximize()
     mainWindow.setResizable(false)
-    mainWindow.setMinimumSize(600, 600)
-    mainWindow.setSize(600, 600)
+    mainWindow.setMinimumSize(960, 600)
+    mainWindow.setSize(960, 600)
     mainWindow.center()
   })
 
@@ -93,8 +117,12 @@ ipcMain.on('install-update', () => {
 
 app.whenReady().then(() => {
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.laoag.lmts')
+    app.setAppUserModelId('com.santa.lmts')
   }
+
+  app.on('browser-window-created', (_, window) => {
+    watchWindowShortcuts(window)
+  })
 
   ipcMain.on('ping', () => console.log('pong'))
 

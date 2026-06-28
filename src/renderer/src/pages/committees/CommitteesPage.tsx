@@ -1,9 +1,9 @@
-import { useState, useMemo, useEffect } from 'react'
+﻿import { useState, useMemo, useEffect } from 'react'
 import { useListData } from '../../hooks/useListData'
 import { useDebounce } from '../../hooks/useDebounce'
 import { BarChart2, Plus, RefreshCw, Pencil, Trash2 } from 'lucide-react'
-import toast from 'react-hot-toast'
-import { addDocument, updateDocument, deleteDocument, fetchDocs } from '../../lib/firebase'
+import { notify } from '../../lib/notify'
+import { addDocument, addDocumentWithCount, updateDocument, deleteDocument, fetchDocs } from '../../lib/firebase'
 import { useAuthStore } from '../../store/authStore'
 import { Layout, PageContainer } from '../../components/layout/Layout'
 import { PageHeader } from '../../components/ui/PageHeader'
@@ -14,6 +14,7 @@ import { FormField, Input, Select, TextArea } from '../../components/ui/FormFiel
 import { Spinner } from '../../components/ui/Spinner'
 import type { Committee, Official } from '../../types'
 import { getFullName, sortByField } from '../../lib/utils'
+import { LEGISLATIVE_TERM_OPTIONS } from '../../hooks/useOfficialsForForm'
 
 const columns: Column<Committee>[] = [
   { key: 'title', header: 'Title' },
@@ -51,8 +52,9 @@ function CommitteeFormModal({
 }) {
   const isEdit = !!record
   const [saving, setSaving] = useState(false)
-  const [officials, setOfficials] = useState<Official[]>([])
+  const [allOfficials, setAllOfficials] = useState<Official[]>([])
   const [loadingOfficials, setLoadingOfficials] = useState(false)
+  const [selectedTerm, setSelectedTerm] = useState('12th')
   const [form, setForm] = useState(EMPTY_FORM)
 
   useEffect(() => {
@@ -71,12 +73,21 @@ function CommitteeFormModal({
       )
 
       setLoadingOfficials(true)
-      fetchDocs<Official>('official', { orderByField: 'lastName', direction: 'asc', pageSize: 200 })
-        .then((res) => setOfficials(res.items))
-        .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load officials'))
+      fetchDocs<Official>('santa_officials', { orderByField: 'lastName', direction: 'asc', pageSize: 500 })
+        .then((res) => {
+          setAllOfficials(res.items)
+        })
+        .catch((err) => notify.error(err instanceof Error ? err.message : 'Failed to load officials'))
         .finally(() => setLoadingOfficials(false))
     }
   }, [open, record])
+
+  const termOptions = LEGISLATIVE_TERM_OPTIONS
+
+  const officials = useMemo(
+    () => (selectedTerm ? allOfficials.filter((o) => o.term === selectedTerm) : allOfficials),
+    [allOfficials, selectedTerm]
+  )
 
   const officialNames = useMemo(
     () => officials.map((o) => getFullName(o.firstName, o.middleName, o.lastName, o.suffix)),
@@ -101,18 +112,18 @@ function CommitteeFormModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.title.trim() || !form.chairman.trim() || !form.viceChairman.trim()) {
-      toast.error('Title, Chairman, and Vice Chairman are required')
+      notify.error('Title, Chairman, and Vice Chairman are required')
       return
     }
     setSaving(true)
     try {
-      if (isEdit) await updateDocument('laoag_committee', record!.id, { ...form })
-      else await addDocument('laoag_committee', { ...form })
+      if (isEdit) await updateDocument('santa_committee', record!.id, { ...form })
+      else await addDocument('santa_committee', { ...form })
       await logActivity(`${isEdit ? 'Updated' : 'Created'} Committee ${form.title}`)
-      toast.success(isEdit ? 'Updated' : 'Created')
+      notify.success(isEdit ? 'Updated' : 'Created')
       onSuccess()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save')
+      notify.error(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
     }
@@ -151,6 +162,20 @@ function CommitteeFormModal({
         </FormField>
         <FormField label="Description" className="col-span-2">
           <TextArea value={form.description} onChange={set('description')} rows={3} />
+        </FormField>
+        <FormField label="Legislative Term" className="col-span-2">
+          {loadingOfficials ? (
+            <div className="input-field flex items-center justify-center"><Spinner size="sm" /></div>
+          ) : (
+            <Select
+              options={termOptions}
+              value={selectedTerm}
+              onChange={(e) => {
+                setSelectedTerm(e.target.value)
+                setForm((f) => ({ ...f, chairman: '', viceChairman: '', members: [] }))
+              }}
+            />
+          )}
         </FormField>
         <FormField label="Chairman" required>
           {loadingOfficials ? (
@@ -212,7 +237,7 @@ export function CommitteesPage() {
   const { items, loading, loadingMore, hasMore, reload, loadMore, sortField, sortDirection } = useListData<
     Record<string, unknown>
   >({
-    endpoint: 'laoag_committee',
+    endpoint: 'santa_committee',
     sortParam: 'title|desc',
     dataKey: 'committee',
     searchQuery: debouncedSearch
@@ -247,21 +272,21 @@ export function CommitteesPage() {
       }) +
       ' ' +
       new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
-    await addDocument('laoag_logs', { name, activity, date, year: new Date().getFullYear() })
+    await addDocumentWithCount('santa_logs', { name, activity, date, year: new Date().getFullYear() })
   }
 
   async function handleDelete() {
     if (!selected) return
     setDeleting(true)
     try {
-      await deleteDocument('laoag_committee', selected.id)
+      await deleteDocument('santa_committee', selected.id)
       await logActivity(`Deleted Committee ${selected.title}`)
-      toast.success('Deleted')
+      notify.success('Deleted')
       setShowDelete(false)
       setSelected(null)
       reload()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete')
+      notify.error(err instanceof Error ? err.message : 'Failed to delete')
     } finally {
       setDeleting(false)
     }
@@ -302,7 +327,7 @@ export function CommitteesPage() {
         <div className="flex justify-end mb-4 flex-shrink-0">
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="Search by title, chairman, members..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input-field !w-56 !py-2"
@@ -335,6 +360,7 @@ export function CommitteesPage() {
             onClose={() => setShowEdit(false)}
             onSuccess={() => {
               setShowEdit(false)
+              setSelected(null)
               reload()
             }}
             logActivity={logActivity}

@@ -2,12 +2,12 @@
 import { useListData } from '../../hooks/useListData'
 import { useDebounce } from '../../hooks/useDebounce'
 import { Bike, Plus, RefreshCw, Pencil, Trash2, ExternalLink } from 'lucide-react'
-import toast from 'react-hot-toast'
-import { addDocument, deleteDocumentWithFile } from '../../lib/firebase'
+import { notify } from '../../lib/notify'
+import { addDocument, addDocumentWithCount, deleteDocumentWithFile } from '../../lib/firebase'
 import { useAuthStore } from '../../store/authStore'
 import { Layout, PageContainer } from '../../components/layout/Layout'
 import { PageHeader } from '../../components/ui/PageHeader'
-import { DataTable, Column } from '../../components/ui/DataTable'
+import { DataTable, Column, useColumnVisibility, ColumnsButton } from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import type { Tricycle } from '../../types'
@@ -26,12 +26,6 @@ const columns: Column<Tricycle>[] = [
     width: 'w-28',
     render: (r) => <Badge variant="blue">{r.natureOfFranchise}</Badge>
   },
-  {
-    key: 'category',
-    header: 'Category',
-    width: 'w-28',
-    render: (r) => <Badge variant="gray">{r.category}</Badge>
-  },
   { key: 'action', header: 'Action', width: 'w-28' },
   {
     key: 'expiration',
@@ -48,13 +42,14 @@ const columns: Column<Tricycle>[] = [
 ]
 
 export function TricyclePage() {
+  const { hiddenColumns, toggleColumn } = useColumnVisibility(columns)
   const user = useAuthStore((s) => s.user)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const { items, loading, loadingMore, hasMore, reload, loadMore, sortField, sortDirection } = useListData<
     Record<string, unknown>
   >({
-    endpoint: 'laoag_tricy',
+    endpoint: 'santa_tricy',
     sortParam: 'franchiseNo|desc',
     dataKey: 'tricy',
     limit: 100,
@@ -90,21 +85,21 @@ export function TricyclePage() {
       }) +
       ' ' +
       new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
-    await addDocument('laoag_logs', { name, activity, date, year: new Date().getFullYear() })
+    await addDocumentWithCount('santa_logs', { name, activity, date, year: new Date().getFullYear() })
   }
 
   async function handleDelete() {
     if (!selected) return
     setDeleting(true)
     try {
-      await deleteDocumentWithFile('laoag_tricy', selected.id, 'tricycle', selected.name)
+      await deleteDocumentWithFile('santa_tricy', selected.id, 'tricycle', selected.name)
       await logActivity(`Deleted Tricycle Franchise: ${selected.name}`)
-      toast.success('Franchise record deleted')
+      notify.success('Franchise record deleted')
       setShowDelete(false)
       setSelected(null)
       reload()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete')
+      notify.error(err instanceof Error ? err.message : 'Failed to delete')
     } finally {
       setDeleting(false)
     }
@@ -119,16 +114,17 @@ export function TricyclePage() {
           icon={<Bike size={20} />}
           actions={
             <>
+              <ColumnsButton columns={columns} hiddenColumns={hiddenColumns} onToggle={toggleColumn} />
               <button className="btn-ghost" onClick={reload}>
                 <RefreshCw size={15} />
                 Refresh
               </button>
               {selected && (
                 <>
-                  {selected.filePath && (
+                  {selected.fileUrl && (
                     <button
                       className="btn-ghost"
-                      onClick={() => window.open(selected.filePath, '_blank')}
+                      onClick={() => window.open(selected.fileUrl, '_blank')}
                     >
                       <ExternalLink size={15} />
                       Open File
@@ -173,9 +169,10 @@ export function TricyclePage() {
           <DataTable
             columns={columns}
             data={filtered}
+            hiddenColumns={hiddenColumns}
             selectedId={selected?.id}
             onRowClick={setSelected}
-            onRowDoubleClick={() => selected?.filePath && window.open(selected.filePath, '_blank')}
+            onRowDoubleClick={() => selected?.fileUrl && window.open(selected.fileUrl, '_blank')}
             loading={loading}
             emptyMessage="No tricycle franchise records found"
             loadingMore={loadingMore}
@@ -197,6 +194,7 @@ export function TricyclePage() {
             onClose={() => setShowEdit(false)}
             onSuccess={() => {
               setShowEdit(false)
+              setSelected(null)
               reload()
             }}
             logActivity={logActivity}

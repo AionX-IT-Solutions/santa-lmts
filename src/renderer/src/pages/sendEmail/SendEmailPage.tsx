@@ -1,6 +1,6 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { Mail, Send } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { notify } from '../../lib/notify'
 import { Layout, PageContainer } from '../../components/layout/Layout'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { FormField, Input, TextArea } from '../../components/ui/FormField'
@@ -18,7 +18,7 @@ export function SendEmailPage() {
   async function handleSend(e: React.FormEvent) {
     e.preventDefault()
     if (!form.to.trim() || !form.subject.trim()) {
-      toast.error('Recipient and Subject are required')
+      notify.error('Recipient and Subject are required')
       return
     }
     setSending(true)
@@ -26,9 +26,9 @@ export function SendEmailPage() {
       // Open default mail client with mailto:
       const mailtoUrl = `mailto:${encodeURIComponent(form.to)}?subject=${encodeURIComponent(form.subject)}&body=${encodeURIComponent(form.body)}`
       window.open(mailtoUrl)
-      toast.success('Email client opened')
+      notify.success('Email client opened')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to open email client')
+      notify.error(err instanceof Error ? err.message : 'Failed to open email client')
     } finally {
       setSending(false)
     }

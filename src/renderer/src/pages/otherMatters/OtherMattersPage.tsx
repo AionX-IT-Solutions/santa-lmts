@@ -2,9 +2,9 @@
 import { useListData } from '../../hooks/useListData'
 import { useDebounce } from '../../hooks/useDebounce'
 import { Scroll, Plus, RefreshCw, Pencil, Trash2, ExternalLink } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { notify } from '../../lib/notify'
 import {
-  addDocument,
+  addDocument, addDocumentWithCount,
   deleteDocumentWithFile,
   addDocumentWithFile,
   updateDocumentWithFile
@@ -12,10 +12,11 @@ import {
 import { useAuthStore } from '../../store/authStore'
 import { Layout, PageContainer } from '../../components/layout/Layout'
 import { PageHeader } from '../../components/ui/PageHeader'
-import { DataTable, Column } from '../../components/ui/DataTable'
+import { DataTable, Column, useColumnVisibility, ColumnsButton } from '../../components/ui/DataTable'
+import { SessionSelect } from '../../components/ui/SessionSelect'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Modal } from '../../components/ui/Modal'
-import { FormField, Input } from '../../components/ui/FormField'
+import { FormField, Input, TextArea } from '../../components/ui/FormField'
 import { FileUploadField } from '../../components/ui/FileUploadField'
 import { Spinner } from '../../components/ui/Spinner'
 import type { OtherMatter } from '../../types'
@@ -91,13 +92,13 @@ function OtherMatterFormModal({
     }
   }, [open, record])
 
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }))
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.otherMattersNo.trim() || !form.title.trim() || !form.author.trim()) {
-      toast.error("Other Matter's Number, Title, and Author are required")
+      notify.error("Other Matter's Number, Title, and Author are required")
       return
     }
     setSaving(true)
@@ -110,7 +111,7 @@ function OtherMatterFormModal({
           'otherMatters',
           `Matter_${form.otherMattersNo}`,
           file,
-          record?.filePath ?? '',
+          record?.fileUrl ?? '',
           record?.fileType ?? ''
         )
       else
@@ -122,10 +123,10 @@ function OtherMatterFormModal({
           file
         )
       await logActivity(`${isEdit ? 'Updated' : 'Created'} Other Matter ${form.otherMattersNo}`)
-      toast.success(isEdit ? 'Updated' : 'Created')
+      notify.success(isEdit ? 'Updated' : 'Created')
       onSuccess()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save')
+      notify.error(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
     }
@@ -157,16 +158,16 @@ function OtherMatterFormModal({
     >
       <form className="grid grid-cols-2 gap-4">
         <FormField label="Other Matter's Number" required>
-          <Input value={form.otherMattersNo} onChange={set('otherMattersNo')} />
+          <Input type="number" min="1" value={form.otherMattersNo} onChange={set('otherMattersNo')} placeholder="e.g. 1" />
         </FormField>
         <FormField label="Date Received">
           <Input type="date" value={form.dateReceived} onChange={set('dateReceived')} />
         </FormField>
         <FormField label="Title" required className="col-span-2">
-          <Input value={form.title} onChange={set('title')} />
+          <TextArea value={form.title} onChange={set('title')} rows={3} />
         </FormField>
         <FormField label="Session Number">
-          <Input value={form.sessionNo} onChange={set('sessionNo')} />
+          <SessionSelect value={form.sessionNo} onChange={(v) => setForm((f) => ({ ...f, sessionNo: v }))} />
         </FormField>
         <FormField label="Status">
           <Input value={form.status} onChange={set('status')} />
@@ -182,11 +183,11 @@ function OtherMatterFormModal({
         </FormField>
         <div className="col-span-2">
           <FileUploadField value={file} onChange={setFile} />
-          {isEdit && record?.filePath && !file && (
+          {isEdit && record?.fileUrl && !file && (
             <p className="text-xs text-slate-500 mt-1.5">
               Current file:{' '}
               <a
-                href={record.filePath}
+                href={record.fileUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:underline"
@@ -202,13 +203,14 @@ function OtherMatterFormModal({
 }
 
 export function OtherMattersPage() {
+  const { hiddenColumns, toggleColumn } = useColumnVisibility(columns)
   const user = useAuthStore((s) => s.user)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const { items, loading, loadingMore, hasMore, reload, loadMore, sortField, sortDirection } = useListData<
     Record<string, unknown>
   >({
-    endpoint: 'laoag_other_matters',
+    endpoint: 'santa_other_matters',
     sortParam: 'otherMattersNo|desc',
     dataKey: 'matters',
     limit: 100,
@@ -243,7 +245,7 @@ export function OtherMattersPage() {
       }) +
       ' ' +
       new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
-    await addDocument('laoag_logs', { name, activity, date, year: new Date().getFullYear() })
+    await addDocumentWithCount('santa_logs', { name, activity, date, year: new Date().getFullYear() })
   }
 
   async function handleDelete() {
@@ -257,12 +259,12 @@ export function OtherMattersPage() {
         `OtherMattersNo._${selected.otherMattersNo}`
       )
       await logActivity(`Deleted Other Matter ${selected.otherMattersNo}`)
-      toast.success('Deleted')
+      notify.success('Deleted')
       setShowDelete(false)
       setSelected(null)
       reload()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete')
+      notify.error(err instanceof Error ? err.message : 'Failed to delete')
     } finally {
       setDeleting(false)
     }
@@ -277,16 +279,17 @@ export function OtherMattersPage() {
           icon={<Scroll size={20} />}
           actions={
             <>
+              <ColumnsButton columns={columns} hiddenColumns={hiddenColumns} onToggle={toggleColumn} />
               <button className="btn-ghost" onClick={reload}>
                 <RefreshCw size={15} />
                 Refresh
               </button>
               {selected && (
                 <>
-                  {selected.filePath && (
+                  {selected.fileUrl && (
                     <button
                       className="btn-ghost"
-                      onClick={() => window.open(selected.filePath, '_blank')}
+                      onClick={() => window.open(selected.fileUrl, '_blank')}
                     >
                       <ExternalLink size={15} />
                       Open
@@ -309,22 +312,23 @@ export function OtherMattersPage() {
             </>
           }
         />
-        <div className="flex justify-end mb-4 flex-shrink-0">
+        <div className="flex justify-end mb-4 shrink-0">
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="Search by number, title, author..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="input-field !w-56 !py-2"
+            className="input-field w-56! py-2!"
           />
         </div>
         <div className="card flex flex-col flex-1 min-h-0">
           <DataTable
             columns={columns}
             data={filtered}
+            hiddenColumns={hiddenColumns}
             selectedId={selected?.id}
             onRowClick={setSelected}
-            onRowDoubleClick={() => selected?.filePath && window.open(selected.filePath, '_blank')}
+            onRowDoubleClick={() => selected?.fileUrl && window.open(selected.fileUrl, '_blank')}
             loading={loading}
             emptyMessage="No other matter records found"
             loadingMore={loadingMore}
@@ -346,6 +350,7 @@ export function OtherMattersPage() {
             onClose={() => setShowEdit(false)}
             onSuccess={() => {
               setShowEdit(false)
+              setSelected(null)
               reload()
             }}
             logActivity={logActivity}

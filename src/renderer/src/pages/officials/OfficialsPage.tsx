@@ -2,12 +2,12 @@
 import { useListData } from '../../hooks/useListData'
 import { useDebounce } from '../../hooks/useDebounce'
 import { Users, Plus, RefreshCw, Pencil, Trash2 } from 'lucide-react'
-import toast from 'react-hot-toast'
-import { addDocument, updateDocument, deleteDocument } from '../../lib/firebase'
+import { notify } from '../../lib/notify'
+import { addDocument, addDocumentWithCount, updateDocument, deleteDocument } from '../../lib/firebase'
 import { useAuthStore } from '../../store/authStore'
 import { Layout, PageContainer } from '../../components/layout/Layout'
 import { PageHeader } from '../../components/ui/PageHeader'
-import { DataTable, Column } from '../../components/ui/DataTable'
+import { DataTable, Column, useColumnVisibility, ColumnsButton } from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Modal } from '../../components/ui/Modal'
@@ -16,13 +16,37 @@ import { Spinner } from '../../components/ui/Spinner'
 import type { Official } from '../../types'
 import { getFullName, sortByField } from '../../lib/utils'
 
+const TERMS = Array.from({ length: 12 }, (_, i) => {
+  const n = 12 - i
+  const suffix = n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'
+  const label = `${n}${suffix}`
+  return { value: label, label }
+})
+
+const LEGISLATIVE_BODIES = [
+  { value: 'Sangguniang Bayan', label: 'Sangguniang Bayan' },
+  { value: 'Sangguniang Panlungsod', label: 'Sangguniang Panlungsod' },
+  { value: 'Sangguniang Panlalawigan', label: 'Sangguniang Panlalawigan' }
+]
+
 const POSITIONS = [
-  { value: 'City Vice Mayor', label: 'City Vice Mayor' },
-  { value: 'City Councilor', label: 'City Councilor' },
-  { value: 'Ex-Officio', label: 'Ex-Officio' }
+  { value: 'Vice Mayor / Presiding Officer', label: 'Vice Mayor / Presiding Officer' },
+  { value: '1st Councilor', label: '1st Councilor' },
+  { value: '2nd Councilor', label: '2nd Councilor' },
+  { value: '3rd Councilor', label: '3rd Councilor' },
+  { value: '4th Councilor', label: '4th Councilor' },
+  { value: '5th Councilor', label: '5th Councilor' },
+  { value: '6th Councilor', label: '6th Councilor' },
+  { value: '7th Councilor', label: '7th Councilor' },
+  { value: '8th Councilor', label: '8th Councilor' },
+  { value: '9th Councilor', label: '9th Councilor' },
+  { value: '10th Councilor', label: '10th Councilor' },
+  { value: 'Ex-Officio - LnB President', label: 'Ex-Officio - LnB President' },
+  { value: 'Ex-Officio - PPSK President', label: 'Ex-Officio - PPSK President' }
 ]
 
 const columns: Column<Official>[] = [
+  { key: 'title', header: 'Title', width: 'w-20' },
   { key: 'firstName', header: 'First Name', width: 'w-28' },
   { key: 'middleName', header: 'Middle Name', width: 'w-28' },
   { key: 'lastName', header: 'Last Name', width: 'w-28' },
@@ -52,12 +76,14 @@ function OfficialFormModal({
   const isEdit = !!record
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
+    title: '',
     firstName: '',
     middleName: '',
     lastName: '',
     suffix: '',
-    position: 'City Councilor',
-    term: ''
+    position: '1st Councilor',
+    term: '',
+    legislativeBody: ''
   })
 
   useEffect(() => {
@@ -65,20 +91,24 @@ function OfficialFormModal({
       setForm(
         record
           ? {
+              title: record.title ?? '',
               firstName: record.firstName ?? '',
               middleName: record.middleName ?? '',
               lastName: record.lastName ?? '',
               suffix: record.suffix ?? '',
-              position: record.position ?? 'City Councilor',
-              term: record.term ?? ''
+              position: record.position ?? 'Councilor',
+              term: record.term ?? '',
+              legislativeBody: record.legislativeBody ?? ''
             }
           : {
+              title: '',
               firstName: '',
               middleName: '',
               lastName: '',
               suffix: '',
-              position: 'City Councilor',
-              term: ''
+              position: '1st Councilor',
+              term: '12th',
+              legislativeBody: 'Sangguniang Bayan'
             }
       )
     }
@@ -90,20 +120,20 @@ function OfficialFormModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.firstName.trim() || !form.lastName.trim()) {
-      toast.error('First name and Last name are required')
+      notify.error('First name and Last name are required')
       return
     }
     setSaving(true)
     try {
-      if (isEdit) await updateDocument('official', record!.id, { ...form })
-      else await addDocument('official', { ...form })
+      if (isEdit) await updateDocument('santa_officials', record!.id, { ...form })
+      else await addDocument('santa_officials', { ...form })
       await logActivity(
         `${isEdit ? 'Updated' : 'Added'} Official ${form.firstName} ${form.lastName}`
       )
-      toast.success(isEdit ? 'Updated' : 'Added')
+      notify.success(isEdit ? 'Updated' : 'Added')
       onSuccess()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save')
+      notify.error(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
     }
@@ -134,6 +164,10 @@ function OfficialFormModal({
       }
     >
       <form className="grid grid-cols-2 gap-4">
+        <FormField label="Title">
+          <Input value={form.title} onChange={set('title')} placeholder="e.g. Atty., Dr., Hon." />
+        </FormField>
+        <div />
         <FormField label="First Name" required>
           <Input value={form.firstName} onChange={set('firstName')} />
         </FormField>
@@ -149,8 +183,11 @@ function OfficialFormModal({
         <FormField label="Position" className="col-span-2">
           <Select options={POSITIONS} value={form.position} onChange={set('position')} />
         </FormField>
-        <FormField label="Term" className="col-span-2">
-          <Input value={form.term} onChange={set('term')} placeholder="e.g. 2022-2025" />
+        <FormField label="Legislative Term">
+          <Select options={TERMS} value={form.term || '12th'} onChange={set('term')} />
+        </FormField>
+        <FormField label="Legislative Body">
+          <Select options={LEGISLATIVE_BODIES} value={form.legislativeBody || 'Sangguniang Bayan'} onChange={set('legislativeBody')} />
         </FormField>
       </form>
     </Modal>
@@ -158,13 +195,14 @@ function OfficialFormModal({
 }
 
 export function OfficialsPage() {
+  const { hiddenColumns, toggleColumn } = useColumnVisibility(columns)
   const user = useAuthStore((s) => s.user)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const { items, loading, loadingMore, hasMore, reload, loadMore, sortField, sortDirection } = useListData<
     Record<string, unknown>
   >({
-    endpoint: '/official/all',
+    endpoint: 'santa_officials',
     sortParam: 'lastName|desc',
     dataKey: 'official',
     searchQuery: debouncedSearch
@@ -181,7 +219,9 @@ export function OfficialsPage() {
       (r) =>
         r.firstName?.toLowerCase().includes(q) ||
         r.lastName?.toLowerCase().includes(q) ||
-        r.position?.toLowerCase().includes(q)
+        r.position?.toLowerCase().includes(q) ||
+        r.term?.toLowerCase().includes(q) ||
+        r.legislativeBody?.toLowerCase().includes(q)
     )
     return sortByField(result as unknown as Record<string, unknown>[], sortField, sortDirection) as unknown as Official[]
   }, [items, debouncedSearch, sortField, sortDirection])
@@ -198,21 +238,21 @@ export function OfficialsPage() {
       }) +
       ' ' +
       new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
-    await addDocument('laoag_logs', { name, activity, date, year: new Date().getFullYear() })
+    await addDocumentWithCount('santa_logs', { name, activity, date, year: new Date().getFullYear() })
   }
 
   async function handleDelete() {
     if (!selected) return
     setDeleting(true)
     try {
-      await deleteDocument('official', selected.id)
+      await deleteDocument('santa_officials', selected.id)
       await logActivity(`Deleted Official ${selected.firstName} ${selected.lastName}`)
-      toast.success('Deleted')
+      notify.success('Deleted')
       setShowDelete(false)
       setSelected(null)
       reload()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete')
+      notify.error(err instanceof Error ? err.message : 'Failed to delete')
     } finally {
       setDeleting(false)
     }
@@ -222,11 +262,12 @@ export function OfficialsPage() {
     <Layout>
       <PageContainer>
         <PageHeader
-          title="S.P. Members / Officials"
+          title="S.B. Members / Officials"
           subtitle={`${filtered.length} records`}
           icon={<Users size={20} />}
           actions={
             <>
+              <ColumnsButton columns={columns} hiddenColumns={hiddenColumns} onToggle={toggleColumn} />
               <button className="btn-ghost" onClick={reload}>
                 <RefreshCw size={15} />
                 Refresh
@@ -250,19 +291,20 @@ export function OfficialsPage() {
             </>
           }
         />
-        <div className="flex justify-end mb-4 flex-shrink-0">
+        <div className="flex justify-end mb-4 shrink-0">
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="Search by name, position, term..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="input-field !w-56 !py-2"
+            className="input-field w-56! py-2!"
           />
         </div>
         <div className="card flex flex-col flex-1 min-h-0">
           <DataTable
             columns={columns}
             data={filtered}
+            hiddenColumns={hiddenColumns}
             selectedId={selected?.id}
             onRowClick={setSelected}
             loading={loading}
@@ -286,6 +328,7 @@ export function OfficialsPage() {
             onClose={() => setShowEdit(false)}
             onSuccess={() => {
               setShowEdit(false)
+              setSelected(null)
               reload()
             }}
             logActivity={logActivity}

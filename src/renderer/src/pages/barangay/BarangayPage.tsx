@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect } from 'react'
+﻿import { useState, useMemo, useEffect } from 'react'
 import { useListData } from '../../hooks/useListData'
 import { useDebounce } from '../../hooks/useDebounce'
 import { Building2, Plus, RefreshCw, Pencil, Trash2, ExternalLink } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { notify } from '../../lib/notify'
 import {
-  addDocument,
+  addDocument, addDocumentWithCount,
   deleteDocumentWithFile,
   addDocumentWithFile,
   updateDocumentWithFile
@@ -12,7 +12,7 @@ import {
 import { useAuthStore } from '../../store/authStore'
 import { Layout, PageContainer } from '../../components/layout/Layout'
 import { PageHeader } from '../../components/ui/PageHeader'
-import { DataTable, Column } from '../../components/ui/DataTable'
+import { DataTable, Column, useColumnVisibility, ColumnsButton } from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Modal } from '../../components/ui/Modal'
@@ -23,86 +23,32 @@ import type { BrgyAction } from '../../types'
 import { formatDate, getFullName, toInputDate, sortByField } from '../../lib/utils'
 
 const BARANGAYS = [
-  '1 SAN LORENZO',
-  '2 STA. JOAQUINA',
-  '3 NRA. SRA. DEL ROSARIO',
-  '4 SAN GUILLERMO',
-  '5 SAN PEDRO',
-  '6 SAN AGUSTIN',
-  '7-A NRA. SRA DE NATIVIDAD',
-  '7-B NRA. SRA DE NATIVIDAD',
-  '8 SAN VICENTE',
-  '9 STA. ANGELA',
-  '10 SAN JOSE',
-  '11 STA. BALBINA',
-  '12 SAN ISIDRO',
-  '13 NRA. SRA. DE VISITACION',
-  '14 STO. TOMAS',
-  '15 SAN GUILLERMO',
-  '16 SAN JACINTO',
-  '17 SAN FRANCISCO',
-  '18 SAN QUIRINO',
-  '19 STA. MARCELA',
-  '20 SAN MIGUEL',
-  '21 SAN PEDRO',
-  '22 SAN ANDRES',
-  '23 SAN MATIAS',
-  '24 NRA. SRA. DE CONSOLACION',
-  '25 STA. CAYETANA',
-  '26 SAN MARCELINO',
-  '27 NRA. SRA. DE SOLEDAD',
-  '28 SAN BERNABE',
-  '29 STO. TOMAS',
-  '30-A SUYO',
-  '30-B STA. MARIA',
-  '31 TALINGAAN',
-  '32-A LA PAZ EAST',
-  '32-B LA PAZ WEST',
-  '32-C LA PAZ EAST',
-  '33-A LA PAZ PROPER',
-  '33-B LA PAZ PROPER',
-  '34-A GABU NORTE WEST',
-  '34-B GABU NORTE WEST',
-  '35 GABU SUR',
-  '36 ARANIW',
-  '37 CALAYAB',
-  '38-A MANGATO EAST',
-  '38-B MANGATO WEST',
-  '39 STA. ROSA',
-  '40 BALATONG',
-  '41 BALACAD',
-  '42 APAYA',
-  '43 CAVIT',
-  '44 ZAMBOANGA',
-  '45 TANGID',
-  '46 NALBO',
-  '47 BENGCAG',
-  '48-A CABUNGAAN NORTH',
-  '48-B CABUNGAAN SOUTH',
-  '49-A DARAYDAY',
-  '49-B RARABURAN',
-  '50 BUTTONG',
-  '51-A NANGALISAN EAST',
-  '51-B NANGALISAN WEST',
-  '52-A SAN MATEO',
-  '52-B LATAAG',
-  '53 RIOENG',
-  '54-A LAGUI SAIL',
-  '54-B CAMANGAAN',
-  '55-A BARIT',
-  '55-B SALET-BULANGON',
-  '55-C VIRA',
-  '56-A BACSIL NORTH',
-  '56-B BACSIL SOUTH',
-  '57 PILA',
-  '58 CASILI',
-  '59-A DIBUA SOUTH',
-  '59-B DIBUA NORTH',
-  '60-A CAAOACAN',
-  '60-B MADILADIG',
-  '61 CATABAN',
-  '62-A NAVOTAS NORTH',
-  '62-B NAVOTAS SOUTH'
+  'AMPANDULA',
+  'BANAOANG',
+  'BASUG',
+  'BUCALAG',
+  'CABANGARAN',
+  'CALUNGBOYAN',
+  'CASIBER',
+  'DAMMAY',
+  'LABUT NORTE',
+  'LABUT SUR',
+  'MAB. NORTE',
+  'MABILBILA SUR',
+  'MAGSAYSAY',
+  'MARCOS',
+  'MANUEVA',
+  'NAGPANAOAN',
+  'NAMALANGAN',
+  'ORIBI',
+  'PASUNGOL',
+  'QUEZON',
+  'QUIRINO',
+  'RANCHO',
+  'RIZAL',
+  'SAC. NORTE',
+  'SACUYYA SUR',
+  'TABUCOLAN',
 ]
 
 const BARANGAY_OPTIONS = BARANGAYS.map((b) => ({ value: b, label: b }))
@@ -212,7 +158,7 @@ function BrgyFormModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.brgy.trim() || !form.measuresTitle.trim()) {
-      toast.error('Barangay and Measures Title are required')
+      notify.error('Barangay and Measures Title are required')
       return
     }
     setSaving(true)
@@ -234,18 +180,18 @@ function BrgyFormModal({
 
       if (isEdit)
         await updateDocumentWithFile(
-          'laoag_brgy',
+          'santa_brgy',
           record!.id,
           data,
           'BrgyActions',
           `${form.brgy}_${form.measuresNo || form.resolutionNumber}`,
           file,
-          record?.filePath ?? '',
+          record?.fileUrl ?? '',
           record?.fileType ?? ''
         )
       else
         await addDocumentWithFile(
-          'laoag_brgy',
+          'santa_brgy',
           data,
           'BrgyActions',
           `${form.brgy}_${form.measuresNo || form.resolutionNumber}`,
@@ -254,10 +200,10 @@ function BrgyFormModal({
       await logActivity(
         `${isEdit ? 'Updated' : 'Created'} Barangay Action ${form.measuresNo || form.resolutionNumber}`
       )
-      toast.success(isEdit ? 'Updated' : 'Created')
+      notify.success(isEdit ? 'Updated' : 'Created')
       onSuccess()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save')
+      notify.error(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
     }
@@ -347,11 +293,11 @@ function BrgyFormModal({
         </FormField>
         <div className="col-span-2">
           <FileUploadField value={file} onChange={setFile} />
-          {isEdit && record?.filePath && !file && (
+          {isEdit && record?.fileUrl && !file && (
             <p className="text-xs text-slate-500 mt-1.5">
               Current file:{' '}
               <a
-                href={record.filePath}
+                href={record.fileUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:underline"
@@ -367,13 +313,14 @@ function BrgyFormModal({
 }
 
 export function BarangayPage() {
+  const { hiddenColumns, toggleColumn } = useColumnVisibility(columns)
   const user = useAuthStore((s) => s.user)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const { items, loading, loadingMore, hasMore, reload, loadMore, sortField, sortDirection } = useListData<
     Record<string, unknown>
   >({
-    endpoint: 'laoag_brgy',
+    endpoint: 'santa_brgy',
     sortParam: 'brgy|desc',
     dataKey: 'brgy',
     limit: 100,
@@ -410,7 +357,7 @@ export function BarangayPage() {
       }) +
       ' ' +
       new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
-    await addDocument('laoag_logs', { name, activity, date, year: new Date().getFullYear() })
+    await addDocumentWithCount('santa_logs', { name, activity, date, year: new Date().getFullYear() })
   }
 
   async function handleDelete() {
@@ -418,7 +365,7 @@ export function BarangayPage() {
     setDeleting(true)
     try {
       await deleteDocumentWithFile(
-        'laoag_brgy',
+        'santa_brgy',
         selected.id,
         'BrgyActions',
         `${selected.brgy}_${selected.measuresNo || selected.resolutionNumber}`
@@ -426,12 +373,12 @@ export function BarangayPage() {
       await logActivity(
         `Deleted Barangay Action ${selected.measuresNo || selected.resolutionNumber}`
       )
-      toast.success('Deleted')
+      notify.success('Deleted')
       setShowDelete(false)
       setSelected(null)
       reload()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete')
+      notify.error(err instanceof Error ? err.message : 'Failed to delete')
     } finally {
       setDeleting(false)
     }
@@ -446,16 +393,17 @@ export function BarangayPage() {
           icon={<Building2 size={20} />}
           actions={
             <>
+              <ColumnsButton columns={columns} hiddenColumns={hiddenColumns} onToggle={toggleColumn} />
               <button className="btn-ghost" onClick={reload}>
                 <RefreshCw size={15} />
                 Refresh
               </button>
               {selected && (
                 <>
-                  {selected.filePath && (
+                  {selected.fileUrl && (
                     <button
                       className="btn-ghost"
-                      onClick={() => window.open(selected.filePath, '_blank')}
+                      onClick={() => window.open(selected.fileUrl, '_blank')}
                     >
                       <ExternalLink size={15} />
                       Open
@@ -478,22 +426,23 @@ export function BarangayPage() {
             </>
           }
         />
-        <div className="flex justify-end mb-4 flex-shrink-0">
+        <div className="flex justify-end mb-4 shrink-0">
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="Search by barangay, measure no., title..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="input-field !w-56 !py-2"
+            className="input-field w-56! py-2!"
           />
         </div>
         <div className="card flex flex-col flex-1 min-h-0">
           <DataTable
             columns={columns}
             data={filtered}
+            hiddenColumns={hiddenColumns}
             selectedId={selected?.id}
             onRowClick={setSelected}
-            onRowDoubleClick={() => selected?.filePath && window.open(selected.filePath, '_blank')}
+            onRowDoubleClick={() => selected?.fileUrl && window.open(selected.fileUrl, '_blank')}
             loading={loading}
             loadingMore={loadingMore}
             onEndReached={hasMore ? loadMore : undefined}
@@ -515,6 +464,7 @@ export function BarangayPage() {
             onClose={() => setShowEdit(false)}
             onSuccess={() => {
               setShowEdit(false)
+              setSelected(null)
               reload()
             }}
             logActivity={logActivity}

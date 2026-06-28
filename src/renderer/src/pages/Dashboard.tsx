@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, useRef } from 'react'
+﻿import { useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchDocs } from '../lib/firebase'
+import { fetchDocs, getAllCounters } from '../lib/firebase'
 import { useAuthStore } from '../store/authStore'
 import { Layout } from '../components/layout/Layout'
 import aionxLogo from '../assets/aionx-logo.png'
@@ -17,11 +17,9 @@ import {
   BookOpen,
   Bike,
   Building2,
-  BarChart2,
   ClipboardCheck,
   ChevronRight,
-  Clock,
-  GitMerge
+  Clock
 } from 'lucide-react'
 import { getFullName } from '../lib/utils'
 import {
@@ -44,12 +42,14 @@ import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 
 interface Stats {
-  generalOrdinances: number
-  appropriation: number
-  taxOrdinances: number
-  generalResolutions: number
-  commendations: number
-  posthumous: number
+  ordinances: number
+  resolutions: number
+  minutes: number
+  tricycle: number
+  draftOrdinances: number
+  draftResolutions: number
+  barangay: number
+  logs: number
 }
 
 /* ── Animated counter ─────────────────────────────────────────── */
@@ -365,20 +365,6 @@ const QUICK_LINKS = [
     bg: 'rgba(6,182,212,0.1)'
   },
   {
-    label: 'Committees',
-    icon: <BarChart2 size={20} />,
-    path: '/committees',
-    color: '#ec4899',
-    bg: 'rgba(236,72,153,0.1)'
-  },
-  {
-    label: 'Barangay Review',
-    icon: <GitMerge size={20} />,
-    path: '/review',
-    color: '#f97316',
-    bg: 'rgba(249,115,22,0.1)'
-  },
-  {
     label: 'Activity Log',
     icon: <ClipboardCheck size={20} />,
     path: '/logs',
@@ -393,12 +379,14 @@ export function DashboardPage() {
   const user = useAuthStore((s) => s.user)
   const [logs, setLogs] = useState<Log[]>([])
   const [stats, setStats] = useState<Stats>({
-    generalOrdinances: 0,
-    appropriation: 0,
-    taxOrdinances: 0,
-    generalResolutions: 0,
-    commendations: 0,
-    posthumous: 0
+    ordinances: 0,
+    resolutions: 0,
+    minutes: 0,
+    tricycle: 0,
+    draftOrdinances: 0,
+    draftResolutions: 0,
+    barangay: 0,
+    logs: 0
   })
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -411,19 +399,9 @@ export function DashboardPage() {
     if (isRefresh) setRefreshing(true)
     else setLoading(true)
     try {
-      const [logsRes, ordRes, resRes] = await Promise.allSettled([
-        fetchDocs<Log>('laoag_logs', {
-          orderByField: 'date',
-          direction: 'desc'
-        }),
-        fetchDocs<{ category: string }>('laoag_ordinances', {
-          orderByField: 'ordinanceNumber',
-          direction: 'desc'
-        }),
-        fetchDocs<{ category: string }>('laoag_resolutions', {
-          orderByField: 'resolutionNumber',
-          direction: 'desc'
-        })
+      const [countersRes, logsRes] = await Promise.allSettled([
+        getAllCounters(),
+        fetchDocs<Log>('santa_logs', { orderByField: 'date', direction: 'desc' })
       ])
 
       if (logsRes.status === 'fulfilled') {
@@ -442,29 +420,17 @@ export function DashboardPage() {
         setLogs(yearLogs)
       }
 
-      const ns: Stats = {
-        generalOrdinances: 0,
-        appropriation: 0,
-        taxOrdinances: 0,
-        generalResolutions: 0,
-        commendations: 0,
-        posthumous: 0
-      }
-      if (ordRes.status === 'fulfilled') {
-        ordRes.value.items.forEach((o) => {
-          if (o.category === 'General Ordinance') ns.generalOrdinances++
-          else if (o.category === 'Appropriation') ns.appropriation++
-          else if (o.category === 'Tax Ordinance') ns.taxOrdinances++
-        })
-      }
-      if (resRes.status === 'fulfilled') {
-        resRes.value.items.forEach((r) => {
-          if (r.category === 'General Resolutions') ns.generalResolutions++
-          else if (r.category === 'Commendations') ns.commendations++
-          else if (r.category === 'Posthumous') ns.posthumous++
-        })
-      }
-      setStats(ns)
+      const c = countersRes.status === 'fulfilled' ? countersRes.value : {}
+      setStats({
+        ordinances: c.ordinancesCount ?? 0,
+        resolutions: c.resolutionsCount ?? 0,
+        minutes: c.minutesCount ?? 0,
+        tricycle: c.tricyCount ?? 0,
+        draftOrdinances: c.draftOrdinanceCount ?? 0,
+        draftResolutions: c.draftResolutionCount ?? 0,
+        barangay: c.brgyCount ?? 0,
+        logs: c.logsCount ?? 0
+      })
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -472,8 +438,8 @@ export function DashboardPage() {
   }
 
   /* ── Derived data ─────────────────────────────────────────── */
-  const totalOrdinances = stats.generalOrdinances + stats.appropriation + stats.taxOrdinances
-  const totalResolutions = stats.generalResolutions + stats.commendations + stats.posthumous
+  const totalOrdinances = stats.ordinances
+  const totalResolutions = stats.resolutions
   const totalDocs = totalOrdinances + totalResolutions
 
   const recent30 = useMemo(() => {
@@ -522,25 +488,22 @@ export function DashboardPage() {
   const distributionData = useMemo(
     () =>
       [
-        { name: 'Gen. Ordinances', value: stats.generalOrdinances, color: PIE_COLORS[0] },
-        { name: 'Appropriation', value: stats.appropriation, color: PIE_COLORS[1] },
-        { name: 'Tax Ordinances', value: stats.taxOrdinances, color: PIE_COLORS[2] },
-        { name: 'Gen. Resolutions', value: stats.generalResolutions, color: PIE_COLORS[3] },
-        { name: 'Commendations', value: stats.commendations, color: PIE_COLORS[4] },
-        { name: 'Posthumous', value: stats.posthumous, color: PIE_COLORS[5] }
+        { name: 'Ordinances', value: stats.ordinances, color: PIE_COLORS[0] },
+        { name: 'Resolutions', value: stats.resolutions, color: PIE_COLORS[1] },
+        { name: 'Minutes', value: stats.minutes, color: PIE_COLORS[2] },
+        { name: 'Tricycle', value: stats.tricycle, color: PIE_COLORS[3] },
+        { name: 'Barangay', value: stats.barangay, color: PIE_COLORS[4] }
       ].filter((d) => d.value > 0),
     [stats]
   )
 
   const comparisonData = useMemo(
     () => [
-      {
-        name: 'General',
-        ordinances: stats.generalOrdinances,
-        resolutions: stats.generalResolutions
-      },
-      { name: 'Approp./Comm.', ordinances: stats.appropriation, resolutions: stats.commendations },
-      { name: 'Tax/Posth.', ordinances: stats.taxOrdinances, resolutions: stats.posthumous }
+      { name: 'Ordinances', value: stats.ordinances },
+      { name: 'Resolutions', value: stats.resolutions },
+      { name: 'Minutes', value: stats.minutes },
+      { name: 'Tricycle', value: stats.tricycle },
+      { name: 'Barangay', value: stats.barangay }
     ],
     [stats]
   )
@@ -562,52 +525,44 @@ export function DashboardPage() {
 
   const CATEGORY_CARDS: StatCardProps[] = [
     {
-      label: 'General Ordinances',
-      value: stats.generalOrdinances,
-      icon: <ScrollText size={15} color="#fff" />,
+      label: 'Minutes / Sessions',
+      value: stats.minutes,
+      icon: <BookOpen size={15} color="#fff" />,
       gradient: 'linear-gradient(135deg,#3b82f6,#2563eb)',
       glow: 'rgba(59,130,246,0.3)',
       delay: 0
     },
     {
-      label: 'Appropriation',
-      value: stats.appropriation,
+      label: 'Draft Ordinances',
+      value: stats.draftOrdinances,
       icon: <TrendingUp size={15} color="#fff" />,
       gradient: 'linear-gradient(135deg,#10b981,#059669)',
       glow: 'rgba(16,185,129,0.3)',
       delay: 60
     },
     {
-      label: 'Tax Ordinances',
-      value: stats.taxOrdinances,
+      label: 'Draft Resolutions',
+      value: stats.draftResolutions,
       icon: <Activity size={15} color="#fff" />,
       gradient: 'linear-gradient(135deg,#f59e0b,#d97706)',
       glow: 'rgba(245,158,11,0.3)',
       delay: 120
     },
     {
-      label: 'General Resolutions',
-      value: stats.generalResolutions,
-      icon: <FileCheck size={15} color="#fff" />,
+      label: 'Tricycle Franchise',
+      value: stats.tricycle,
+      icon: <Calendar size={15} color="#fff" />,
       gradient: 'linear-gradient(135deg,#8b5cf6,#7c3aed)',
       glow: 'rgba(139,92,246,0.3)',
       delay: 180
     },
     {
-      label: 'Commendations',
-      value: stats.commendations,
+      label: 'Barangay Actions',
+      value: stats.barangay,
       icon: <Users size={15} color="#fff" />,
       gradient: 'linear-gradient(135deg,#ec4899,#db2777)',
       glow: 'rgba(236,72,153,0.3)',
       delay: 240
-    },
-    {
-      label: 'Posthumous Resolutions',
-      value: stats.posthumous,
-      icon: <Calendar size={15} color="#fff" />,
-      gradient: 'linear-gradient(135deg,#06b6d4,#0891b2)',
-      glow: 'rgba(6,182,212,0.3)',
-      delay: 300
     }
   ]
 
@@ -754,7 +709,7 @@ export function DashboardPage() {
             />
             <KpiCard
               label="Activity Records"
-              value={logs.length}
+              value={stats.logs}
               sub={`${recent30} in the last 30 days`}
               icon={<Activity size={20} color="#fff" />}
               gradient="linear-gradient(135deg,#f59e0b,#d97706)"
@@ -768,7 +723,7 @@ export function DashboardPage() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(6,1fr)',
+              gridTemplateColumns: 'repeat(5,1fr)',
               gap: 12,
               flexShrink: 0
             }}
@@ -781,7 +736,7 @@ export function DashboardPage() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(6,1fr)',
+              gridTemplateColumns: 'repeat(5,1fr)',
               gap: 12,
               flexShrink: 0
             }}
@@ -1002,18 +957,7 @@ export function DashboardPage() {
                   />
                   <YAxis tick={axisStyle} axisLine={false} tickLine={false} allowDecimals={false} />
                   <Tooltip content={<DarkTooltip />} cursor={{ fill: 'transparent' }} />
-                  <Bar
-                    dataKey="ordinances"
-                    name="Ordinances"
-                    fill="#3b82f6"
-                    radius={[5, 5, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="resolutions"
-                    name="Resolutions"
-                    fill="#8b5cf6"
-                    radius={[5, 5, 0, 0]}
-                  />
+                  <Bar dataKey="value" name="Records" fill="#3b82f6" radius={[5, 5, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -1199,7 +1143,7 @@ export function DashboardPage() {
               Quick Navigation
             </span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8,1fr)', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 10 }}>
             {QUICK_LINKS.map((link) => (
               <button
                 key={link.path}

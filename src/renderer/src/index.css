@@ -8,6 +8,10 @@
   }
 
   :root {
+    /* ── Accent color (default indigo, overridden by JS) ─────── */
+    --c-accent: #6366f1;
+    --c-accent-glow: rgba(99, 102, 241, 0.35);
+
     /* ── Dark theme (default) ───────────────────────────────── */
     --c-bg: #060912;
     --c-surface: rgba(10, 18, 38, 0.82);
@@ -26,11 +30,11 @@
     --c-sidebar-logo-b: #c4b5fd;
     --c-nav-text: #94a3b8;
     --c-nav-text-hover: #ffffff;
-    --c-nav-text-active: #93c5fd;
+    --c-nav-text-active: var(--c-accent);
     --c-nav-hover: rgba(255, 255, 255, 0.07);
-    --c-nav-active-bg: rgba(37, 99, 235, 0.14);
-    --c-nav-active-border: rgba(37, 99, 235, 0.22);
-    --c-nav-active-shadow: inset 3px 0 0 #2563eb;
+    --c-nav-active-bg: rgba(99, 102, 241, 0.18);
+    --c-nav-active-border: rgba(99, 102, 241, 0.38);
+    --c-nav-active-shadow: inset 3px 0 0 var(--c-accent);
     --c-user-bg: rgba(255, 255, 255, 0.04);
     --c-user-border: rgba(255, 255, 255, 0.07);
 
@@ -75,11 +79,11 @@
     --c-sidebar-logo-b: #7c3aed;
     --c-nav-text: #64748b;
     --c-nav-text-hover: #0f172a;
-    --c-nav-text-active: #2563eb;
+    --c-nav-text-active: var(--c-accent);
     --c-nav-hover: rgba(0, 0, 0, 0.05);
-    --c-nav-active-bg: rgba(37, 99, 235, 0.08);
-    --c-nav-active-border: rgba(37, 99, 235, 0.15);
-    --c-nav-active-shadow: inset 3px 0 0 #2563eb;
+    --c-nav-active-bg: rgba(99, 102, 241, 0.08);
+    --c-nav-active-border: rgba(99, 102, 241, 0.15);
+    --c-nav-active-shadow: inset 3px 0 0 var(--c-accent);
     --c-user-bg: rgba(255, 255, 255, 0.06);
     --c-user-border: rgba(255, 255, 255, 0.08);
 
@@ -112,6 +116,7 @@
       BlinkMacSystemFont,
       'Segoe UI',
       sans-serif;
+    font-size: var(--app-font-size, 14px);
     background: var(--c-bg);
     color: var(--c-text-1);
     overflow: hidden;
@@ -121,6 +126,11 @@
       background-color 0.25s ease,
       color 0.25s ease;
   }
+}
+
+@keyframes settingsFadeIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @layer utilities {
@@ -188,11 +198,11 @@
   /* ── Buttons ───────────────────────────────────────────────── */
   .btn-primary {
     @apply flex items-center gap-2 px-4 py-2 text-white text-sm font-semibold rounded-xl transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed;
-    background: linear-gradient(135deg, #3b82f6 0%, #7c3aed 100%);
-    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.35);
+    background: var(--c-accent);
+    box-shadow: 0 4px 16px var(--c-accent-glow);
   }
   .btn-primary:hover:not(:disabled) {
-    box-shadow: 0 6px 22px rgba(59, 130, 246, 0.5);
+    box-shadow: 0 6px 22px var(--c-accent-glow);
     transform: translateY(-1px);
   }
   .btn-primary:active:not(:disabled) {
@@ -241,13 +251,24 @@
   }
   .input-field:focus {
     outline: none;
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.06);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    border-color: var(--c-accent);
+    background: rgba(99, 102, 241, 0.06);
+    box-shadow: 0 0 0 3px var(--c-accent-glow);
   }
   .input-field option {
     background: var(--c-surface-solid);
     color: var(--c-text-1);
+  }
+
+  /* Hide number input spinners */
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
   }
 
   /* ── Label ─────────────────────────────────────────────────── */
@@ -283,6 +304,37 @@
   }
   .no-drag {
     -webkit-app-region: no-drag;
+  }
+
+  /* ── Settings slider ───────────────────────────────────────── */
+  .settings-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 5px;
+    border-radius: 999px;
+    outline: none;
+    cursor: pointer;
+    border: none;
+    background: linear-gradient(
+      to right,
+      var(--c-accent, #6366f1) var(--fill-pct, 40%),
+      var(--c-input-border) var(--fill-pct, 40%)
+    );
+  }
+  .settings-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid var(--c-accent, #6366f1);
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    transition: box-shadow 0.15s ease;
+  }
+  .settings-slider::-webkit-slider-thumb:hover {
+    box-shadow: 0 0 0 4px var(--c-accent-glow, rgba(99, 102, 241, 0.35));
   }
 }
 

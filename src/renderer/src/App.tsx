@@ -14,17 +14,22 @@ import { BarangayPage } from './pages/barangay/BarangayPage'
 import { TranscriptPage } from './pages/transcript/TranscriptPage'
 import { DraftOrdinancesPage } from './pages/draft/DraftOrdinancesPage'
 import { DraftResolutionsPage } from './pages/draft/DraftResolutionsPage'
+import { DraftCommunicationsPage } from './pages/draft/DraftCommunicationsPage'
+import { DraftPetitionsPage } from './pages/draft/DraftPetitionsPage'
+import { DraftMessagesMemorialsPage } from './pages/draft/DraftMessagesMemorialsPage'
 import { JudicialPage } from './pages/judicial/JudicialPage'
 import { ReviewPage } from './pages/review/ReviewPage'
 import { CorrectionsPage } from './pages/corrections/CorrectionsPage'
 import { IncomingPage } from './pages/incoming/IncomingPage'
 import { OtherMattersPage } from './pages/otherMatters/OtherMattersPage'
-import { CommitteesPage } from './pages/committees/CommitteesPage'
+// import { CommitteesPage } from './pages/committees/CommitteesPage'
 import { CommitteeReportsPage } from './pages/committeeReports/CommitteeReportsPage'
 import { AccountsPage } from './pages/accounts/AccountsPage'
 import { OfficialsPage } from './pages/officials/OfficialsPage'
 import { SendEmailPage } from './pages/sendEmail/SendEmailPage'
 import { LogsPage } from './pages/logs/LogsPage'
+import { SettingsPage } from './pages/settings/SettingsPage'
+import { AboutPage } from './pages/about/AboutPage'
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -151,6 +156,30 @@ export default function App() {
           }
         />
         <Route
+          path="/draft-communications"
+          element={
+            <ProtectedRoute>
+              <DraftCommunicationsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/draft-petitions"
+          element={
+            <ProtectedRoute>
+              <DraftPetitionsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/draft-messages-memorials"
+          element={
+            <ProtectedRoute>
+              <DraftMessagesMemorialsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/judicial"
           element={
             <ProtectedRoute>
@@ -190,14 +219,14 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
+        {/* <Route
           path="/committees"
           element={
             <ProtectedRoute>
               <CommitteesPage />
             </ProtectedRoute>
           }
-        />
+        /> */}
         <Route
           path="/committee-reports"
           element={
@@ -235,6 +264,22 @@ export default function App() {
           element={
             <ProtectedRoute>
               <LogsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/about"
+          element={
+            <ProtectedRoute>
+              <AboutPage />
             </ProtectedRoute>
           }
         />

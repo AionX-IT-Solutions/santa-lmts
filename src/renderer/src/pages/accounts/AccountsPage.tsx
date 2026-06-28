@@ -2,7 +2,7 @@
 import { useListData } from '../../hooks/useListData'
 import { useDebounce } from '../../hooks/useDebounce'
 import { UserCog, Plus, RefreshCw, Pencil, Trash2 } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { notify } from '../../lib/notify'
 import bcrypt from 'bcryptjs'
 import {
   addDocument,
@@ -14,7 +14,7 @@ import {
 import { useAuthStore } from '../../store/authStore'
 import { Layout, PageContainer } from '../../components/layout/Layout'
 import { PageHeader } from '../../components/ui/PageHeader'
-import { DataTable, Column } from '../../components/ui/DataTable'
+import { DataTable, Column, useColumnVisibility, ColumnsButton } from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Modal } from '../../components/ui/Modal'
@@ -35,19 +35,14 @@ const ALL_PRIVILEGES = [
   'Barangay Actions',
   'Other Communications',
   'Transcript of Proceedings',
-  'Standing Committees',
-  'Barangay Review',
+  'S.B. Members',
   'Committee Reports',
-  'Quasi-Judicial Function',
-  'Addendum and Corrections',
-  'S.P Members',
-  'Incoming',
-  'Other Matters'
 ]
 const ROLES = [
   { value: 'Admin', label: 'Admin' },
   { value: 'Secretary', label: 'Secretary' },
   { value: 'Staff', label: 'Staff' },
+  { value: 'S.B. Official', label: 'S.B. Official' },
   { value: 'View Only', label: 'View Only' }
 ]
 const GENDERS = [
@@ -144,8 +139,8 @@ function AccountFormModal({
 
   const previewUrl = useMemo(() => {
     if (file) return URL.createObjectURL(file)
-    return record?.filePath || null
-  }, [file, record?.filePath])
+    return record?.fileUrl || null
+  }, [file, record?.fileUrl])
 
   useEffect(() => {
     return () => {
@@ -161,37 +156,37 @@ function AccountFormModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.username.trim() || (!isEdit && !form.password.trim())) {
-      toast.error('Username and password are required')
+      notify.error('Username and password are required')
       return
     }
     setSaving(true)
     try {
-      let filePath = record?.filePath ?? ''
+      let fileUrl = record?.fileUrl ?? ''
       if (file) {
-        filePath = await uploadFile('Users', form.username, file)
+        fileUrl = await uploadFile('Users', form.username, file)
       }
       if (isEdit) {
-        const update: Record<string, unknown> = { ...form, privileges, filePath }
+        const update: Record<string, unknown> = { ...form, privileges, fileUrl }
         if (form.password.trim()) {
           update.password = await bcrypt.hash(form.password, 10)
         } else {
           delete update.password
         }
-        await updateDocument('laoag_users', record!.id, update)
+        await updateDocument('santa_users', record!.id, update)
       } else {
         const hashedPassword = await bcrypt.hash(form.password, 10)
-        await addDocumentWithCount('laoag_users', {
+        await addDocumentWithCount('santa_users', {
           ...form,
           password: hashedPassword,
           privileges,
-          filePath
+          fileUrl
         })
       }
       await logActivity(`${isEdit ? 'Updated' : 'Created'} Account ${form.username}`)
-      toast.success(isEdit ? 'Account updated' : 'Account created')
+      notify.success(isEdit ? 'Account updated' : 'Account created')
       onSuccess()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save')
+      notify.error(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
     }
@@ -296,13 +291,15 @@ function AccountFormModal({
 }
 
 export function AccountsPage() {
+  const { hiddenColumns, toggleColumn } = useColumnVisibility(columns)
   const user = useAuthStore((s) => s.user)
+  const isAdmin = user?.role === 'Admin'
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const { items, loading, loadingMore, hasMore, reload, loadMore, sortField, sortDirection } = useListData<
     Record<string, unknown>
   >({
-    endpoint: 'laoag_users',
+    endpoint: 'santa_users',
     sortParam: 'username|desc',
     dataKey: 'accounts',
     searchQuery: debouncedSearch
@@ -336,21 +333,21 @@ export function AccountsPage() {
       }) +
       ' ' +
       new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
-    await addDocument('laoag_logs', { name, activity, date, year: new Date().getFullYear() })
+    await addDocumentWithCount('santa_logs', { name, activity, date, year: new Date().getFullYear() })
   }
 
   async function handleDelete() {
     if (!selected) return
     setDeleting(true)
     try {
-      await deleteDocumentWithCount('laoag_users', selected.id)
+      await deleteDocumentWithCount('santa_users', selected.id)
       await logActivity(`Deleted Account ${selected.username}`)
-      toast.success('Deleted')
+      notify.success('Deleted')
       setShowDelete(false)
       setSelected(null)
       reload()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete')
+      notify.error(err instanceof Error ? err.message : 'Failed to delete')
     } finally {
       setDeleting(false)
     }
@@ -365,26 +362,33 @@ export function AccountsPage() {
           icon={<UserCog size={20} />}
           actions={
             <>
+              <ColumnsButton columns={columns} hiddenColumns={hiddenColumns} onToggle={toggleColumn} />
               <button className="btn-ghost" onClick={reload}>
                 <RefreshCw size={15} />
                 Refresh
               </button>
               {selected && (
                 <>
-                  <button className="btn-secondary" onClick={() => setShowEdit(true)}>
-                    <Pencil size={15} />
-                    Edit
-                  </button>
-                  <button className="btn-danger" onClick={() => setShowDelete(true)}>
-                    <Trash2 size={15} />
-                    Delete
-                  </button>
+                  {isAdmin && (
+                    <button className="btn-secondary" onClick={() => setShowEdit(true)}>
+                      <Pencil size={15} />
+                      Edit
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button className="btn-danger" onClick={() => setShowDelete(true)}>
+                      <Trash2 size={15} />
+                      Delete
+                    </button>
+                  )}
                 </>
               )}
-              <button className="btn-primary" onClick={() => setShowAdd(true)}>
-                <Plus size={15} />
-                Create Account
-              </button>
+              {isAdmin && (
+                <button className="btn-primary" onClick={() => setShowAdd(true)}>
+                  <Plus size={15} />
+                  Create Account
+                </button>
+              )}
             </>
           }
         />
@@ -401,6 +405,7 @@ export function AccountsPage() {
           <DataTable
             columns={columns}
             data={filtered}
+            hiddenColumns={hiddenColumns}
             selectedId={selected?.id}
             onRowClick={setSelected}
             loading={loading}
@@ -409,37 +414,42 @@ export function AccountsPage() {
             onEndReached={hasMore ? loadMore : undefined}
           />
         </div>
-        <AccountFormModal
-          open={showAdd}
-          onClose={() => setShowAdd(false)}
-          onSuccess={() => {
-            setShowAdd(false)
-            reload()
-          }}
-          logActivity={logActivity}
-        />
-        {selected && (
+        {isAdmin && (
+          <AccountFormModal
+            open={showAdd}
+            onClose={() => setShowAdd(false)}
+            onSuccess={() => {
+              setShowAdd(false)
+              reload()
+            }}
+            logActivity={logActivity}
+          />
+        )}
+        {isAdmin && selected && (
           <AccountFormModal
             open={showEdit}
             onClose={() => setShowEdit(false)}
             onSuccess={() => {
               setShowEdit(false)
+              setSelected(null)
               reload()
             }}
             logActivity={logActivity}
             record={selected}
           />
         )}
-        <ConfirmDialog
-          open={showDelete}
-          title="Delete Account"
-          message={`Delete account for ${selected?.username}?`}
-          confirmLabel="Delete"
-          danger
-          loading={deleting}
-          onConfirm={handleDelete}
-          onCancel={() => setShowDelete(false)}
-        />
+        {isAdmin && (
+          <ConfirmDialog
+            open={showDelete}
+            title="Delete Account"
+            message={`Delete account for ${selected?.username}?`}
+            confirmLabel="Delete"
+            danger
+            loading={deleting}
+            onConfirm={handleDelete}
+            onCancel={() => setShowDelete(false)}
+          />
+        )}
       </PageContainer>
     </Layout>
   )

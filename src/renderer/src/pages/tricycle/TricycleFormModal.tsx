@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { Modal } from '../../components/ui/Modal'
 import { FormField, Input, Select } from '../../components/ui/FormField'
 import { FileUploadField } from '../../components/ui/FileUploadField'
 import { Spinner } from '../../components/ui/Spinner'
 import { addDocumentWithFile, updateDocumentWithFile } from '../../lib/firebase'
 import type { Tricycle } from '../../types'
-import toast from 'react-hot-toast'
+import { notify } from '../../lib/notify'
 import { toInputDate } from '../../lib/utils'
 
 const NATURE_OPTIONS = [
@@ -17,11 +17,6 @@ const NATURE_OPTIONS = [
   { value: 'Illegal Sale', label: 'Illegal Sale' },
   { value: 'Amnesty', label: 'Amnesty' },
   { value: 'Transfer', label: 'Transfer' }
-]
-const CATEGORY_OPTIONS = [
-  { value: 'City', label: 'City' },
-  { value: 'Barangay', label: 'Barangay' },
-  { value: 'Reissue', label: 'Reissue' }
 ]
 const ACTION_OPTIONS = [
   { value: 'Approved', label: 'Approved' },
@@ -53,7 +48,6 @@ export function TricycleFormModal({ open, onClose, onSuccess, logActivity, tricy
     dateReceived: '',
     timeReceived: '',
     natureOfFranchise: 'New',
-    category: 'City',
     action: 'Approved'
   })
 
@@ -72,7 +66,6 @@ export function TricycleFormModal({ open, onClose, onSuccess, logActivity, tricy
           dateReceived: toInputDate(tricycle.dateReceived),
           timeReceived: tricycle.timeReceived ?? '',
           natureOfFranchise: tricycle.natureOfFranchise ?? 'New',
-          category: tricycle.category ?? 'City',
           action: tricycle.action ?? 'Approved'
         })
       } else {
@@ -88,7 +81,6 @@ export function TricycleFormModal({ open, onClose, onSuccess, logActivity, tricy
           dateReceived: '',
           timeReceived: '',
           natureOfFranchise: 'New',
-          category: 'City',
           action: 'Approved'
         })
       }
@@ -102,35 +94,31 @@ export function TricycleFormModal({ open, onClose, onSuccess, logActivity, tricy
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim() || !form.franchiseNo.trim()) {
-      toast.error('Applicant Name and Franchise Number are required')
-      return
-    }
-    if (!isEdit && !file) {
-      toast.error('Please attach a file')
+      notify.error('Applicant Name and Franchise Number are required')
       return
     }
     setSaving(true)
     try {
       if (isEdit) {
         await updateDocumentWithFile(
-          'laoag_tricy',
+          'santa_tricy',
           tricycle!.id,
           { ...form },
           'tricycle',
           form.name,
           file,
-          tricycle?.filePath ?? '',
+          tricycle?.fileUrl ?? '',
           tricycle?.fileType ?? ''
         )
         await logActivity(`Updated Tricycle Franchise: ${form.name}`)
       } else {
-        await addDocumentWithFile('laoag_tricy', { ...form }, 'tricycle', form.name, file)
+        await addDocumentWithFile('santa_tricy', { ...form }, 'tricycle', form.name, file)
         await logActivity(`Created Tricycle Franchise: ${form.name}`)
       }
-      toast.success(isEdit ? 'Franchise updated' : 'Franchise created')
+      notify.success(isEdit ? 'Franchise updated' : 'Franchise created')
       onSuccess()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save')
+      notify.error(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
     }
@@ -198,9 +186,6 @@ export function TricycleFormModal({ open, onClose, onSuccess, logActivity, tricy
             onChange={set('natureOfFranchise')}
           />
         </FormField>
-        <FormField label="Category">
-          <Select options={CATEGORY_OPTIONS} value={form.category} onChange={set('category')} />
-        </FormField>
         <FormField label="Action">
           <Select options={ACTION_OPTIONS} value={form.action} onChange={set('action')} />
         </FormField>
@@ -211,12 +196,12 @@ export function TricycleFormModal({ open, onClose, onSuccess, logActivity, tricy
           <Input type="time" value={form.timeReceived} onChange={set('timeReceived')} />
         </FormField>
         <div className="col-span-2 border-t border-slate-100 pt-3">
-          <FileUploadField value={file} onChange={setFile} required={!isEdit} />
-          {isEdit && tricycle?.filePath && !file && (
+          <FileUploadField value={file} onChange={setFile} />
+          {isEdit && tricycle?.fileUrl && !file && (
             <p className="text-xs text-slate-500 mt-1.5">
               Current:{' '}
               <a
-                href={tricycle.filePath}
+                href={tricycle.fileUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:underline"

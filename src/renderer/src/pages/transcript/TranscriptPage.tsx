@@ -1,17 +1,18 @@
-import { useState, useMemo, useEffect } from 'react'
+﻿import { useState, useMemo, useEffect } from 'react'
 import { useListData } from '../../hooks/useListData'
 import { useDebounce } from '../../hooks/useDebounce'
 import { Mic, Plus, RefreshCw, Pencil, Trash2, ExternalLink } from 'lucide-react'
-import toast from 'react-hot-toast'
-import { addDocument, deleteDocumentWithFile, addDocumentWithFile, updateDocumentWithFile } from '../../lib/firebase'
+import { notify } from '../../lib/notify'
+import { addDocument, addDocumentWithCount, deleteDocumentWithFile, addDocumentWithFile, updateDocumentWithFile } from '../../lib/firebase'
 import { useAuthStore } from '../../store/authStore'
 import { Layout, PageContainer } from '../../components/layout/Layout'
 import { PageHeader } from '../../components/ui/PageHeader'
-import { DataTable, Column } from '../../components/ui/DataTable'
+import { DataTable, Column, useColumnVisibility, ColumnsButton } from '../../components/ui/DataTable'
+import { SessionSelect } from '../../components/ui/SessionSelect'
 import { Badge } from '../../components/ui/Badge'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Modal } from '../../components/ui/Modal'
-import { FormField, Input, Select } from '../../components/ui/FormField'
+import { FormField, Input, Select, TextArea } from '../../components/ui/FormField'
 import { FileUploadField } from '../../components/ui/FileUploadField'
 import { Spinner } from '../../components/ui/Spinner'
 import type { Transcript } from '../../types'
@@ -23,7 +24,7 @@ const SESSION_TYPES = [
 ]
 
 const columns: Column<Transcript>[] = [
-  { key: 'transcriptNo', header: 'Transcript No.', width: 'w-28' },
+  { key: 'transcriptNo', header: 'Minutes No.', width: 'w-28' },
   { key: 'sessionNo', header: 'Session No.', width: 'w-28' },
   {
     key: 'sessionCategory',
@@ -31,9 +32,9 @@ const columns: Column<Transcript>[] = [
     width: 'w-32',
     render: (r) => <Badge variant="indigo">{r.sessionCategory}</Badge>
   },
+  { key: 'title', header: 'Title' },
   { key: 'previousSessionNo', header: 'Prev. Session No.', width: 'w-32' },
   { key: 'dateOfPreviousSession', header: 'Date of Prev. Session', width: 'w-44' },
-  { key: 'transcriptCategory', header: 'Transcript Category' },
   { key: 'tag', header: 'Tag', width: 'w-32' }
 ]
 
@@ -43,7 +44,7 @@ const EMPTY_FORM = {
   previousSessionNo: '',
   dateOfPreviousSession: '',
   transcriptNo: '',
-  transcriptCategory: 'Transcribed Record of Proceedings',
+  title: '',
   tag: ''
 }
 
@@ -52,13 +53,15 @@ function TranscriptFormModal({
   onClose,
   onSuccess,
   logActivity,
-  record
+  record,
+  existingItems
 }: {
   open: boolean
   onClose: () => void
   onSuccess: () => void
   logActivity: (a: string) => Promise<void>
   record?: Transcript
+  existingItems: Transcript[]
 }) {
   const isEdit = !!record
   const [saving, setSaving] = useState(false)
@@ -75,8 +78,7 @@ function TranscriptFormModal({
               previousSessionNo: record.previousSessionNo ?? '',
               dateOfPreviousSession: record.dateOfPreviousSession ?? '',
               transcriptNo: record.transcriptNo ?? '',
-              transcriptCategory:
-                record.transcriptCategory ?? 'Transcribed Record of Proceedings',
+              title: record.title ?? '',
               tag: record.tag ?? ''
             }
           : EMPTY_FORM
@@ -85,45 +87,45 @@ function TranscriptFormModal({
     }
   }, [open, record])
 
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }))
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.sessionNo.trim()) {
-      toast.error('Session number is required')
+      notify.error('Session number is required')
       return
     }
-    if (!isEdit && !file) {
-      toast.error('Please attach a file')
+    if (!isEdit && existingItems.some((item) => item.sessionNo === form.sessionNo)) {
+      notify.error(`Session No. ${form.sessionNo} already exists`)
       return
     }
     setSaving(true)
     try {
       if (isEdit)
         await updateDocumentWithFile(
-          'laoag_transcript',
+          'santa_transcript',
           record!.id,
           { ...form },
           'TranscriptOfProceedings',
           `TranscriptNo._${form.sessionNo}`,
           file,
-          record?.filePath ?? '',
+          record?.fileUrl ?? '',
           record?.fileType ?? ''
         )
       else
         await addDocumentWithFile(
-          'laoag_transcript',
+          'santa_transcript',
           { ...form },
           'TranscriptOfProceedings',
           `TranscriptNo._${form.sessionNo}`,
           file
         )
       await logActivity(`${isEdit ? 'Updated' : 'Created'} Transcript Session ${form.sessionNo}`)
-      toast.success(isEdit ? 'Updated' : 'Created')
+      notify.success(isEdit ? 'Updated' : 'Created')
       onSuccess()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save')
+      notify.error(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
     }
@@ -133,7 +135,7 @@ function TranscriptFormModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={isEdit ? 'Edit Transcript' : 'Add Transcript'}
+      title={isEdit ? 'Edit Minutes Record' : 'Add Minutes Record'}
       size="md"
       footer={
         <>
@@ -155,11 +157,7 @@ function TranscriptFormModal({
     >
       <form className="grid grid-cols-2 gap-4">
         <FormField label="Session Number" required>
-          <Input
-            value={form.sessionNo}
-            onChange={set('sessionNo')}
-            placeholder="e.g. 71st"
-          />
+          <SessionSelect value={form.sessionNo} onChange={(v) => setForm((f) => ({ ...f, sessionNo: v }))} />
         </FormField>
         <FormField label="Session Type">
           <Select options={SESSION_TYPES} value={form.sessionCategory} onChange={set('sessionCategory')} />
@@ -178,22 +176,22 @@ function TranscriptFormModal({
             placeholder="e.g. Tuesday, December 5, 2023"
           />
         </FormField>
-        <FormField label="Transcript No.">
-          <Input value={form.transcriptNo} onChange={set('transcriptNo')} placeholder="e.g. 024" />
+        <FormField label="Minutes No.">
+          <Input type="number" min="1" value={form.transcriptNo} onChange={set('transcriptNo')} placeholder="e.g. 1" />
         </FormField>
-        <FormField label="Transcript Category">
-          <Input value={form.transcriptCategory} onChange={set('transcriptCategory')} />
+        <FormField label="Title" className="col-span-2">
+          <TextArea value={form.title} onChange={set('title')} rows={3} placeholder="e.g. Transcribed Record of the 24th Regular Session" />
         </FormField>
         <FormField label="Tag" className="col-span-2">
           <Input value={form.tag} onChange={set('tag')} placeholder="Keywords/tags" />
         </FormField>
         <div className="col-span-2">
-          <FileUploadField value={file} onChange={setFile} required={!isEdit} />
-          {isEdit && record?.filePath && !file && (
+          <FileUploadField value={file} onChange={setFile} />
+          {isEdit && record?.fileUrl && !file && (
             <p className="text-xs text-slate-500 mt-1.5">
               Current file:{' '}
               <a
-                href={record.filePath}
+                href={record.fileUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:underline"
@@ -209,13 +207,14 @@ function TranscriptFormModal({
 }
 
 export function TranscriptPage() {
+  const { hiddenColumns, toggleColumn } = useColumnVisibility(columns)
   const user = useAuthStore((s) => s.user)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const { items, loading, loadingMore, hasMore, reload, loadMore, sortField, sortDirection } = useListData<
     Record<string, unknown>
   >({
-    endpoint: 'laoag_transcript',
+    endpoint: 'santa_transcript',
     sortParam: 'transcriptNo|desc',
     dataKey: 'transcript',
     searchQuery: debouncedSearch
@@ -250,7 +249,7 @@ export function TranscriptPage() {
       }) +
       ' ' +
       new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
-    await addDocument('laoag_logs', { name, activity, date, year: new Date().getFullYear() })
+    await addDocumentWithCount('santa_logs', { name, activity, date, year: new Date().getFullYear() })
   }
 
   async function handleDelete() {
@@ -258,18 +257,18 @@ export function TranscriptPage() {
     setDeleting(true)
     try {
       await deleteDocumentWithFile(
-        'laoag_transcript',
+        'santa_transcript',
         selected.id,
         'TranscriptOfProceedings',
         `TranscriptNo._${selected.sessionNo}`
       )
       await logActivity(`Deleted Transcript Session ${selected.sessionNo}`)
-      toast.success('Deleted')
+      notify.success('Deleted')
       setShowDelete(false)
       setSelected(null)
       reload()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete')
+      notify.error(err instanceof Error ? err.message : 'Failed to delete')
     } finally {
       setDeleting(false)
     }
@@ -279,21 +278,22 @@ export function TranscriptPage() {
     <Layout>
       <PageContainer>
         <PageHeader
-          title="Transcript of Proceedings"
+          title="Reading and Approval of the Minutes of the Previous Regular Session"
           subtitle={`${filtered.length} records`}
           icon={<Mic size={20} />}
           actions={
             <>
+              <ColumnsButton columns={columns} hiddenColumns={hiddenColumns} onToggle={toggleColumn} />
               <button className="btn-ghost" onClick={reload}>
                 <RefreshCw size={15} />
                 Refresh
               </button>
               {selected && (
                 <>
-                  {selected.filePath && (
+                  {selected.fileUrl && (
                     <button
                       className="btn-ghost"
-                      onClick={() => window.open(selected.filePath, '_blank')}
+                      onClick={() => window.open(selected.fileUrl, '_blank')}
                     >
                       <ExternalLink size={15} />
                       Open
@@ -316,24 +316,25 @@ export function TranscriptPage() {
             </>
           }
         />
-        <div className="flex justify-end mb-4 flex-shrink-0">
+        <div className="flex justify-end mb-4 shrink-0">
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="Search by session no., minutes no., title..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="input-field !w-64 !py-2"
+            className="input-field w-64! py-2!"
           />
         </div>
         <div className="card flex flex-col flex-1 min-h-0">
           <DataTable
             columns={columns}
             data={filtered}
+            hiddenColumns={hiddenColumns}
             selectedId={selected?.id}
             onRowClick={setSelected}
-            onRowDoubleClick={() => selected?.filePath && window.open(selected.filePath, '_blank')}
+            onRowDoubleClick={() => selected?.fileUrl && window.open(selected.fileUrl, '_blank')}
             loading={loading}
-            emptyMessage="No transcript records found"
+            emptyMessage="No minutes records found"
             loadingMore={loadingMore}
             onEndReached={hasMore ? loadMore : undefined}
           />
@@ -346,6 +347,7 @@ export function TranscriptPage() {
             reload()
           }}
           logActivity={logActivity}
+          existingItems={filtered}
         />
         {selected && (
           <TranscriptFormModal
@@ -353,16 +355,18 @@ export function TranscriptPage() {
             onClose={() => setShowEdit(false)}
             onSuccess={() => {
               setShowEdit(false)
+              setSelected(null)
               reload()
             }}
             logActivity={logActivity}
+            existingItems={filtered}
             record={selected}
           />
         )}
         <ConfirmDialog
           open={showDelete}
-          title="Delete Transcript"
-          message={`Delete transcript for Session ${selected?.sessionNo}?`}
+          title="Delete Minutes Record"
+          message={`Delete minutes record for Session ${selected?.sessionNo}?`}
           confirmLabel="Delete"
           danger
           loading={deleting}

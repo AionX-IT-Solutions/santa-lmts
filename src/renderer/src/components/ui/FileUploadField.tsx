@@ -11,6 +11,12 @@ interface FileUploadFieldProps {
   error?: string
 }
 
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
 export function FileUploadField({
   label = 'Attachment',
   accept = '.pdf,.doc,.docx',
@@ -40,10 +46,13 @@ export function FileUploadField({
         onClick={() => inputRef.current?.click()}
       >
         {value ? (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-blue-600">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2 text-blue-600">
               <File size={16} />
-              <span className="text-sm font-medium truncate max-w-[200px]">{value.name}</span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate max-w-[180px]">{value.name}</p>
+                <p className="text-xs text-slate-500">{formatFileSize(value.size)}</p>
+              </div>
             </div>
             <button
               type="button"

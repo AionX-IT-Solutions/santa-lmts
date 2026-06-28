@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Modal } from '../../components/ui/Modal'
-import { FormField, Input, Select } from '../../components/ui/FormField'
+import { FormField, Input, Select, TextArea } from '../../components/ui/FormField'
 import { FileUploadField } from '../../components/ui/FileUploadField'
 import { Spinner } from '../../components/ui/Spinner'
 import { addDocumentWithFile, updateDocumentWithFile } from '../../lib/firebase'
 import type { Resolution } from '../../types'
-import toast from 'react-hot-toast'
+import { notify } from '../../lib/notify'
 import { toInputDate } from '../../lib/utils'
+import { useOfficialsForForm } from '../../hooks/useOfficialsForForm'
 
 const ACTION_SP_OPTIONS = [
   { value: 'Approved', label: 'Approved' },
@@ -38,11 +39,16 @@ export function ResolutionFormModal({ open, onClose, onSuccess, logActivity, res
   const isEdit = !!resolution
   const [saving, setSaving] = useState(false)
   const [file, setFile] = useState<File | null>(null)
+  const { loadingOfficials, selectedTerm, setSelectedTerm, termOptions, officialNames, authorOptions } =
+    useOfficialsForForm(open)
+
   const [form, setForm] = useState({
     resolutionNumber: '',
+    series: '',
     category: 'General Resolutions',
     title: '',
     author: '',
+    coSponsors: [] as string[],
     tag: '',
     dateApprovedSp: '',
     actionSp: '',
@@ -63,9 +69,11 @@ export function ResolutionFormModal({ open, onClose, onSuccess, logActivity, res
       if (resolution) {
         setForm({
           resolutionNumber: resolution.resolutionNumber ?? '',
+          series: resolution.series ?? '',
           category: resolution.category ?? 'General Resolutions',
           title: resolution.title ?? '',
           author: resolution.author ?? '',
+          coSponsors: Array.isArray(resolution.coSponsors) ? resolution.coSponsors : resolution.coSponsors ? resolution.coSponsors.split(', ').filter(Boolean) : [],
           tag: resolution.tag ?? '',
           dateApprovedSp: toInputDate(resolution.dateApprovedSp),
           actionSp: resolution.actionSp ?? '',
@@ -83,9 +91,11 @@ export function ResolutionFormModal({ open, onClose, onSuccess, logActivity, res
       } else {
         setForm({
           resolutionNumber: '',
+          series: '',
           category: 'General Resolutions',
           title: '',
           author: '',
+          coSponsors: [],
           tag: '',
           dateApprovedSp: '',
           actionSp: '',
@@ -105,26 +115,32 @@ export function ResolutionFormModal({ open, onClose, onSuccess, logActivity, res
     }
   }, [open, resolution])
 
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }))
+
+  const coSponsorList = form.coSponsors
+  const toggleCoSponsor = (name: string) => {
+    const updated = coSponsorList.includes(name)
+      ? coSponsorList.filter((n) => n !== name)
+      : [...coSponsorList, name]
+    setForm((f) => ({ ...f, coSponsors: updated }))
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.resolutionNumber.trim() || !form.title.trim() || !form.author.trim()) {
-      toast.error('Resolution Number, Title, and Author are required')
-      return
-    }
-    if (!isEdit && !file) {
-      toast.error('Please attach a file')
+      notify.error('Resolution Number, Title, and Author are required')
       return
     }
     setSaving(true)
     try {
       const fields = {
         resolutionNumber: form.resolutionNumber,
+        series: form.series,
         category: form.category,
         title: form.title,
         author: form.author,
+        coSponsors: form.coSponsors,
         tag: form.tag,
         dateApprovedSp: form.dateApprovedSp,
         actionSp: form.actionSp === 'Others' ? form.actionSpOther : form.actionSp,
@@ -140,30 +156,30 @@ export function ResolutionFormModal({ open, onClose, onSuccess, logActivity, res
       }
       if (isEdit) {
         await updateDocumentWithFile(
-          'laoag_resolutions',
+          'santa_resolutions',
           resolution!.id,
           fields,
-          'Resolutions',
+          'GeneralResolutions',
           `ResolutionNo._${form.resolutionNumber}`,
           file,
-          resolution?.filePath ?? '',
+          resolution?.fileUrl ?? '',
           resolution?.fileType ?? ''
         )
         await logActivity(`Updated Resolution Number ${form.resolutionNumber}`)
       } else {
         await addDocumentWithFile(
-          'laoag_resolutions',
+          'santa_resolutions',
           fields,
-          'Resolutions',
+          'GeneralResolutions',
           `ResolutionNo._${form.resolutionNumber}`,
           file
         )
         await logActivity(`Created Resolution Number ${form.resolutionNumber}`)
       }
-      toast.success(isEdit ? 'Resolution updated' : 'Resolution created')
+      notify.success(isEdit ? 'Resolution updated' : 'Resolution created')
       onSuccess()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save')
+      notify.error(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
     }
@@ -197,36 +213,81 @@ export function ResolutionFormModal({ open, onClose, onSuccess, logActivity, res
     >
       <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
         <FormField label="Resolution Number" required>
-          <Input
-            value={form.resolutionNumber}
-            onChange={set('resolutionNumber')}
-            placeholder="e.g. 2024-001"
-          />
+          <Input type="number" min="1" value={form.resolutionNumber} onChange={set('resolutionNumber')} placeholder="e.g. 1" />
+        </FormField>
+        <FormField label="Series">
+          <Input value={form.series} onChange={set('series')} placeholder="e.g. Series of 2024" />
         </FormField>
         <FormField label="Category" required>
           <Select options={CATEGORIES} value={form.category} onChange={set('category')} />
         </FormField>
         <FormField label="Title" required className="col-span-2">
-          <Input value={form.title} onChange={set('title')} placeholder="Resolution title" />
+          <TextArea value={form.title} onChange={set('title')} rows={3} placeholder="Resolution title" />
         </FormField>
+
+        {/* Legislative Term filter */}
+        <FormField label="Legislative Term" className="col-span-2">
+          {loadingOfficials ? (
+            <div className="input-field flex items-center justify-center"><Spinner size="sm" /></div>
+          ) : (
+            <Select
+              options={termOptions}
+              value={selectedTerm}
+              onChange={(e) => {
+                setSelectedTerm(e.target.value)
+                setForm((f) => ({ ...f, author: '', coSponsors: [] }))
+              }}
+            />
+          )}
+        </FormField>
+
         <FormField label="Author" required>
-          <Input value={form.author} onChange={set('author')} placeholder="Author name" />
+          {loadingOfficials ? (
+            <div className="input-field flex items-center justify-center"><Spinner size="sm" /></div>
+          ) : (
+            <Select
+              options={authorOptions}
+              value={form.author}
+              onChange={set('author')}
+              placeholder="Select author"
+            />
+          )}
         </FormField>
-        <FormField label="Tag">
+
+        <FormField label="Co-Sponsors">
+          {loadingOfficials ? (
+            <div className="input-field flex items-center justify-center"><Spinner size="sm" /></div>
+          ) : (
+            <div className="border border-slate-200 rounded-lg p-3 max-h-36 overflow-y-auto grid grid-cols-1 gap-1.5">
+              {officialNames.length === 0 ? (
+                <p className="text-xs text-slate-400">No officials for selected term</p>
+              ) : (
+                officialNames.map((name) => (
+                  <label key={name} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={coSponsorList.includes(name)}
+                      onChange={() => toggleCoSponsor(name)}
+                    />
+                    {name}
+                  </label>
+                ))
+              )}
+            </div>
+          )}
+        </FormField>
+
+        <FormField label="Tag" className="col-span-2">
           <Input value={form.tag} onChange={set('tag')} placeholder="Keywords/tags" />
         </FormField>
+
         <div className="col-span-2 border-t border-slate-100 pt-3">
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Date Approved (SP)">
+            <FormField label="Date Approved (S.B.)">
               <Input type="date" value={form.dateApprovedSp} onChange={set('dateApprovedSp')} />
             </FormField>
-            <FormField label="Action of SP">
-              <Select
-                options={ACTION_SP_OPTIONS}
-                value={form.actionSp}
-                onChange={set('actionSp')}
-                placeholder="Select action"
-              />
+            <FormField label="Action of S.B.">
+              <Select options={ACTION_SP_OPTIONS} value={form.actionSp} onChange={set('actionSp')} placeholder="Select action" />
             </FormField>
             {form.actionSp === 'Others' && (
               <FormField label="Specify" className="col-span-2">
@@ -234,19 +295,10 @@ export function ResolutionFormModal({ open, onClose, onSuccess, logActivity, res
               </FormField>
             )}
             <FormField label="Date Transmitted to Mayor">
-              <Input
-                type="date"
-                value={form.transmittedDateMayor}
-                onChange={set('transmittedDateMayor')}
-              />
+              <Input type="date" value={form.transmittedDateMayor} onChange={set('transmittedDateMayor')} />
             </FormField>
             <FormField label="Action of Mayor">
-              <Select
-                options={ACTION_MAYOR_OPTIONS}
-                value={form.actionMayor}
-                onChange={set('actionMayor')}
-                placeholder="Select action"
-              />
+              <Select options={ACTION_MAYOR_OPTIONS} value={form.actionMayor} onChange={set('actionMayor')} placeholder="Select action" />
             </FormField>
             {form.actionMayor === 'Others' && (
               <FormField label="Specify" className="col-span-2">
@@ -261,17 +313,13 @@ export function ResolutionFormModal({ open, onClose, onSuccess, logActivity, res
             </FormField>
           </div>
         </div>
+
         <div className="col-span-2 border-t border-slate-100 pt-3">
-          <FileUploadField value={file} onChange={setFile} required={!isEdit} />
-          {isEdit && resolution?.filePath && !file && (
+          <FileUploadField value={file} onChange={setFile} />
+          {isEdit && resolution?.fileUrl && !file && (
             <p className="text-xs text-slate-500 mt-1.5">
               Current:{' '}
-              <a
-                href={resolution.filePath}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:underline"
-              >
+              <a href={resolution.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                 View file
               </a>
             </p>

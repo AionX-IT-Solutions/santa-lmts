@@ -1,11 +1,11 @@
-export interface AuthUser {
+﻿export interface AuthUser {
   token: string
   firstName: string
   middleName: string
   lastName: string
   role: string
   privileges: string[]
-  filePath: string
+  fileUrl: string
 }
 
 export interface LoginRequest {
@@ -22,7 +22,7 @@ export interface LoginResponse {
     firstName: string
     middleName: string
     lastName: string
-    filePath: string
+    fileUrl: string
   }
 }
 
@@ -30,12 +30,14 @@ export interface LoginResponse {
 export interface Ordinance {
   id: string
   ordinanceNumber: string
+  series: string
   category: string
   title: string
   author: string
+  coSponsors: string[]
   tag: string
   fileType: string
-  filePath: string
+  fileUrl: string
   dateApprovedSp: string
   actionSp: string
   transmittedDateMayor: string
@@ -59,12 +61,14 @@ export interface OrdinanceListResponse {
 export interface Resolution {
   id: string
   resolutionNumber: string
+  series: string
   category: string
   title: string
   author: string
+  coSponsors: string[]
   tag: string
   fileType: string
-  filePath: string
+  fileUrl: string
   dateApprovedSp: string
   actionSp: string
   transmittedDateMayor: string
@@ -98,7 +102,7 @@ export interface Tricycle {
   dateReceived: string
   timeReceived: string
   fileType: string
-  filePath: string
+  fileUrl: string
   natureOfFranchise: string
   category: string
   action: string
@@ -118,15 +122,16 @@ export interface Minutes {
   category: string
   time?: string
   callOrder?: string
-  place?: string
+  title?: string
   agenda?: string
   tag?: string
   present?: string[]
   absent?: string[]
   adjournmentTime?: string
   prayer?: string
+  rollCall?: string
   fileType: string
-  filePath: string
+  fileUrl: string
   created?: string
   updated?: string
 }
@@ -149,7 +154,7 @@ export interface Communication {
   dateReceived: string
   timeReceived: string
   fileType: string
-  filePath: string
+  fileUrl: string
   created?: string
 }
 
@@ -175,7 +180,7 @@ export interface BrgyAction {
   dateReleased: string
   timeReleased: string
   fileType: string
-  filePath: string
+  fileUrl: string
   created?: string
 }
 
@@ -193,10 +198,10 @@ export interface Transcript {
   previousSessionNo: string
   dateOfPreviousSession: string
   transcriptNo: string
-  transcriptCategory: string
+  title: string
   tag: string
   fileType: string
-  filePath: string
+  fileUrl: string
   created?: string
 }
 
@@ -230,12 +235,14 @@ export interface CommitteeReport {
   committeeReportsNo: string
   committee: string
   title: string
+  author: string
+  coSponsors: string[]
   sessionNo: string
   tag: string
   dateReceived: string
   timeReceived: string
   fileType: string
-  filePath: string
+  fileUrl: string
   created?: string
 }
 
@@ -249,12 +256,15 @@ export interface CommitteeReportListResponse {
 export interface DraftOrdinance {
   id: string
   draftOrdinanceNumber: string
+  series: string
+  sessionNo: string
   category: string
   title: string
   author: string
+  coSponsors: string[]
   tag: string
   fileType: string
-  filePath: string
+  fileUrl: string
   dateReceived: string
   action: string
   remarks: string
@@ -271,12 +281,15 @@ export interface DraftOrdinanceListResponse {
 export interface DraftResolution {
   id: string
   draftResolutionNumber: string
+  series: string
+  sessionNo: string
   category: string
   title: string
   author: string
+  coSponsors: string[]
   tag: string
   fileType: string
-  filePath: string
+  fileUrl: string
   dateReceived: string
   action: string
   remarks: string
@@ -289,6 +302,63 @@ export interface DraftResolutionListResponse {
   data: { draftResolution: DraftResolution[]; last: string }
 }
 
+// Draft Communication
+export interface DraftCommunication {
+  id: string
+  draftCommunicationNumber: string
+  series: string
+  sessionNo: string
+  committee: string
+  title: string
+  author: string
+  coSponsors: string[]
+  tag: string
+  fileType: string
+  fileUrl: string
+  dateReceived: string
+  action: string
+  remarks: string
+  created?: string
+}
+
+// Draft Petition
+export interface DraftPetition {
+  id: string
+  draftPetitionNumber: string
+  series: string
+  sessionNo: string
+  committee: string
+  title: string
+  author: string
+  coSponsors: string[]
+  tag: string
+  fileType: string
+  fileUrl: string
+  dateReceived: string
+  action: string
+  remarks: string
+  created?: string
+}
+
+// Draft Messages and Memorials
+export interface DraftMessagesMemorials {
+  id: string
+  draftMessageNumber: string
+  series: string
+  sessionNo: string
+  committee: string
+  title: string
+  author: string
+  coSponsors: string[]
+  tag: string
+  fileType: string
+  fileUrl: string
+  dateReceived: string
+  action: string
+  remarks: string
+  created?: string
+}
+
 // Judicial
 export interface Judicial {
   id: string
@@ -299,7 +369,7 @@ export interface Judicial {
   date: string
   action: string
   fileType: string
-  filePath: string
+  fileUrl: string
   created?: string
 }
 
@@ -322,7 +392,7 @@ export interface Review {
   timeReceived: string
   category: string
   fileType: string
-  filePath: string
+  fileUrl: string
   created?: string
 }
 
@@ -340,7 +410,7 @@ export interface Correction {
   title: string
   category: string
   fileType: string
-  filePath: string
+  fileUrl: string
   created?: string
 }
 
@@ -367,7 +437,7 @@ export interface Incoming {
   tags: string
   remarks: string
   fileType: string
-  filePath: string
+  fileUrl: string
   created?: string
 }
 
@@ -389,7 +459,7 @@ export interface OtherMatter {
   author: string
   tag: string
   fileType: string
-  filePath: string
+  fileUrl: string
   created?: string
 }
 
@@ -413,7 +483,7 @@ export interface Account {
   birthday: string
   gender: string
   address: string
-  filePath: string
+  fileUrl: string
 }
 
 export interface AccountListResponse {
@@ -425,12 +495,14 @@ export interface AccountListResponse {
 // Officials
 export interface Official {
   id: string
+  title: string
   firstName: string
   middleName: string
   lastName: string
   suffix: string
   position: string
   term: string
+  legislativeBody: string
   created?: string
 }
 
@@ -460,3 +532,4 @@ export interface ApiResponse<T = unknown> {
   message: string
   data: T
 }
+

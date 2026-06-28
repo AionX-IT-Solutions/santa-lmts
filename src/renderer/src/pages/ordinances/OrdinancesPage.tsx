@@ -1,11 +1,11 @@
 ﻿import { useMemo, useState } from 'react'
 import { ScrollText, Plus, RefreshCw, Pencil, Trash2, ExternalLink } from 'lucide-react'
-import toast from 'react-hot-toast'
-import { addDocument, deleteDocumentWithFile } from '../../lib/firebase'
+import { notify } from '../../lib/notify'
+import { addDocumentWithCount, deleteDocumentWithFile } from '../../lib/firebase'
 import { useAuthStore } from '../../store/authStore'
 import { Layout, PageContainer } from '../../components/layout/Layout'
 import { PageHeader } from '../../components/ui/PageHeader'
-import { DataTable, Column } from '../../components/ui/DataTable'
+import { DataTable, Column, useColumnVisibility, ColumnsButton } from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import type { Ordinance } from '../../types'
@@ -25,6 +25,7 @@ const categoryColor = (c: string) => {
 
 const columns: Column<Ordinance>[] = [
   { key: 'ordinanceNumber', header: 'Ord. No.', width: 'w-28' },
+  { key: 'series', header: 'Series', width: 'w-32' },
   {
     key: 'category',
     header: 'Category',
@@ -40,11 +41,11 @@ const columns: Column<Ordinance>[] = [
   { key: 'tag', header: 'Tag', width: 'w-28' },
   {
     key: 'dateApprovedSp',
-    header: 'Date Approved (SP)',
+    header: 'Date Approved (SB)',
     width: 'w-36',
     render: (row) => <span className="text-xs">{formatDate(row.dateApprovedSp)}</span>
   },
-  { key: 'actionSp', header: 'Action (SP)', width: 'w-32' },
+  { key: 'actionSp', header: 'Action (SB)', width: 'w-32' },
   {
     key: 'dateReceived',
     header: 'Date Received',
@@ -54,6 +55,7 @@ const columns: Column<Ordinance>[] = [
 ]
 
 export function OrdinancesPage() {
+  const { hiddenColumns, toggleColumn } = useColumnVisibility(columns)
   const user = useAuthStore((s) => s.user)
   const [category, setCategory] = useState('General Ordinance')
   const [search, setSearch] = useState('')
@@ -62,16 +64,15 @@ export function OrdinancesPage() {
     () => [{ field: 'category', op: '==' as const, value: category }],
     [category]
   )
-  const { items, loading, loadingMore, hasMore, reload, loadMore, sortField, sortDirection } = useListData<
-    Record<string, unknown>
-  >({
-    endpoint: 'laoag_ordinances',
-    sortParam: 'ordinanceNumber|desc',
-    dataKey: 'ordinance',
-    limit: 100,
-    filters,
-    searchQuery: debouncedSearch
-  })
+  const { items, loading, loadingMore, hasMore, reload, loadMore, sortField, sortDirection } =
+    useListData<Record<string, unknown>>({
+      endpoint: 'santa_ordinances',
+      sortParam: 'ordinanceNumber|desc',
+      dataKey: 'ordinance',
+      limit: 100,
+      filters,
+      searchQuery: debouncedSearch
+    })
 
   const [selected, setSelected] = useState<Ordinance | null>(null)
   const [showAdd, setShowAdd] = useState(false)
@@ -82,14 +83,20 @@ export function OrdinancesPage() {
   const filtered = useMemo(() => {
     const base = items as unknown as Ordinance[]
     const q = debouncedSearch.toLowerCase()
-    const result = !debouncedSearch.trim() ? base : base.filter((o) =>
-      Object.values(o as unknown as Record<string, unknown>).some((v) =>
-        String(v ?? '')
-          .toLowerCase()
-          .includes(q)
-      )
-    )
-    return sortByField(result as unknown as Record<string, unknown>[], sortField, sortDirection) as unknown as Ordinance[]
+    const result = !debouncedSearch.trim()
+      ? base
+      : base.filter((o) =>
+          Object.values(o as unknown as Record<string, unknown>).some((v) =>
+            String(v ?? '')
+              .toLowerCase()
+              .includes(q)
+          )
+        )
+    return sortByField(
+      result as unknown as Record<string, unknown>[],
+      sortField,
+      sortDirection
+    ) as unknown as Ordinance[]
   }, [items, debouncedSearch, sortField, sortDirection])
 
   async function handleDelete() {
@@ -97,18 +104,18 @@ export function OrdinancesPage() {
     setDeleting(true)
     try {
       await deleteDocumentWithFile(
-        'laoag_ordinances',
+        'santa_ordinances',
         selected.id,
         'GeneralOrdinances',
         `OrdinanceNo._${selected.ordinanceNumber}`
       )
       await logActivity(`Deleted Ordinance Number ${selected.ordinanceNumber}`)
-      toast.success('Ordinance deleted')
+      notify.success('Ordinance deleted')
       setShowDelete(false)
       setSelected(null)
       reload()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete ordinance')
+      notify.error(err instanceof Error ? err.message : 'Failed to delete ordinance')
     } finally {
       setDeleting(false)
     }
@@ -126,12 +133,17 @@ export function OrdinancesPage() {
       }) +
       ' ' +
       new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
-    await addDocument('laoag_logs', { name, activity, date, year: new Date().getFullYear() })
+    await addDocumentWithCount('santa_logs', {
+      name,
+      activity,
+      date,
+      year: new Date().getFullYear()
+    })
   }
 
   function openFile() {
-    if (selected?.filePath) window.open(selected.filePath, '_blank')
-    else toast.error('No file attached')
+    if (selected?.fileUrl) window.open(selected.fileUrl, '_blank')
+    else notify.error('No file attached')
   }
 
   return (
@@ -143,6 +155,7 @@ export function OrdinancesPage() {
           icon={<ScrollText size={20} />}
           actions={
             <>
+              <ColumnsButton columns={columns} hiddenColumns={hiddenColumns} onToggle={toggleColumn} />
               <button className="btn-ghost" onClick={reload}>
                 <RefreshCw size={15} />
                 Refresh
@@ -235,6 +248,7 @@ export function OrdinancesPage() {
           <DataTable
             columns={columns}
             data={filtered}
+            hiddenColumns={hiddenColumns}
             selectedId={selected?.id}
             onRowClick={(row) => setSelected(row as unknown as Ordinance)}
             onRowDoubleClick={openFile}
@@ -260,6 +274,7 @@ export function OrdinancesPage() {
             onClose={() => setShowEdit(false)}
             onSuccess={() => {
               setShowEdit(false)
+              setSelected(null)
               reload()
             }}
             logActivity={logActivity}

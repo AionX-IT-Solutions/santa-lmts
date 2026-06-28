@@ -1,10 +1,10 @@
-﻿import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useListData } from '../../hooks/useListData'
 import { useDebounce } from '../../hooks/useDebounce'
 import { MessageSquare, Plus, RefreshCw, Pencil, Trash2, ExternalLink } from 'lucide-react'
 import { notify } from '../../lib/notify'
 import {
-  addDocument, addDocumentWithCount,
+  addDocumentWithCount,
   deleteDocumentWithFile,
   addDocumentWithFile,
   updateDocumentWithFile
@@ -16,109 +16,142 @@ import { DataTable, Column, useColumnVisibility, ColumnsButton } from '../../com
 import { SessionSelect } from '../../components/ui/SessionSelect'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Modal } from '../../components/ui/Modal'
-import { FormField, Input, TextArea } from '../../components/ui/FormField'
+import { FormField, Input, Select, TextArea } from '../../components/ui/FormField'
 import { FileUploadField } from '../../components/ui/FileUploadField'
 import { Spinner } from '../../components/ui/Spinner'
-import type { Communication } from '../../types'
+import type { DraftCommunication } from '../../types'
 import { formatDate, getFullName, toInputDate, sortByField } from '../../lib/utils'
+import { useOfficialsForForm } from '../../hooks/useOfficialsForForm'
 
-const columns: Column<Communication>[] = [
-  { key: 'communicationNo', header: 'Comm. No.', width: 'w-24' },
-  { key: 'title', header: 'Title' },
-  { key: 'author', header: 'Author', width: 'w-36' },
+const ACTION_OPTIONS = [
+  { value: 'First Reading', label: 'First Reading' },
+  { value: 'Second Reading', label: 'Second Reading' },
+  { value: 'Approved', label: 'Approved' },
+  { value: 'Disapproved', label: 'Disapproved' }
+]
+
+const columns: Column<DraftCommunication>[] = [
+  { key: 'draftCommunicationNumber', header: 'Comm. No.', width: 'w-28' },
   { key: 'sessionNo', header: 'Session No.', width: 'w-28' },
-  { key: 'status', header: 'Status', width: 'w-28' },
+  { key: 'series', header: 'Series', width: 'w-28' },
   { key: 'tag', header: 'Tag', width: 'w-28' },
+  { key: 'title', header: 'Title' },
+  { key: 'author', header: 'Author', width: 'w-32' },
+  { key: 'action', header: 'Action', width: 'w-32' },
   {
     key: 'dateReceived',
-    header: 'Date Received',
+    header: 'Date',
     width: 'w-28',
     render: (r) => <span className="text-xs">{formatDate(r.dateReceived)}</span>
   }
 ]
 
-const EMPTY_FORM = {
-  communicationNo: '',
-  title: '',
-  author: '',
-  sessionNo: '',
-  status: '',
-  tag: '',
-  dateReceived: '',
-  timeReceived: ''
-}
-
-function CommunicationFormModal({
+function DraftCommFormModal({
   open,
   onClose,
   onSuccess,
   logActivity,
-  record
+  record,
+  existingItems
 }: {
   open: boolean
   onClose: () => void
   onSuccess: () => void
   logActivity: (a: string) => Promise<void>
-  record?: Communication
+  record?: DraftCommunication
+  existingItems: DraftCommunication[]
 }) {
   const isEdit = !!record
   const [saving, setSaving] = useState(false)
   const [file, setFile] = useState<File | null>(null)
-  const [form, setForm] = useState(EMPTY_FORM)
+  const { loadingOfficials, selectedTerm, setSelectedTerm, termOptions, officialNames, authorOptions } =
+    useOfficialsForForm(open)
+  const [form, setForm] = useState({
+    draftCommunicationNumber: '',
+    series: '',
+    sessionNo: '',
+    committee: '',
+    title: '',
+    author: '',
+    coSponsors: [] as string[],
+    tag: '',
+    dateReceived: '',
+    action: 'First Reading',
+    remarks: ''
+  })
 
   useEffect(() => {
     if (open) {
       setForm(
         record
           ? {
-              communicationNo: record.communicationNo ?? '',
+              draftCommunicationNumber: record.draftCommunicationNumber ?? '',
+              series: record.series ?? '',
+              sessionNo: record.sessionNo ?? '',
+              committee: record.committee ?? '',
               title: record.title ?? '',
               author: record.author ?? '',
-              sessionNo: record.sessionNo ?? '',
-              status: record.status ?? '',
+              coSponsors: Array.isArray(record.coSponsors) ? record.coSponsors : record.coSponsors ? record.coSponsors.split(', ').filter(Boolean) : [],
               tag: record.tag ?? '',
               dateReceived: toInputDate(record.dateReceived),
-              timeReceived: record.timeReceived ?? ''
+              action: record.action ?? 'First Reading',
+              remarks: record.remarks ?? ''
             }
-          : EMPTY_FORM
+          : {
+              draftCommunicationNumber: '',
+              series: '',
+              sessionNo: '',
+              committee: '',
+              title: '',
+              author: '',
+              coSponsors: [],
+              tag: '',
+              dateReceived: '',
+              action: 'First Reading',
+              remarks: ''
+            }
       )
       setFile(null)
     }
   }, [open, record])
 
-  const set =
-    (k: string) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-      setForm((f) => ({ ...f, [k]: e.target.value }))
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }))
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.communicationNo.trim() || !form.title.trim()) {
-      notify.error('Communication Number and Title are required')
+    if (!form.draftCommunicationNumber.trim() || !form.title.trim() || !form.sessionNo.trim()) {
+      notify.error('Draft number, Session number, and Title are required')
+      return
+    }
+    if (!isEdit && existingItems.some((item) => item.draftCommunicationNumber === form.draftCommunicationNumber)) {
+      notify.error(`Communication No. ${form.draftCommunicationNumber} already exists`)
       return
     }
     setSaving(true)
     try {
       if (isEdit)
         await updateDocumentWithFile(
-          'santa_communication',
+          'santa_draft_communication',
           record!.id,
           { ...form },
-          'OtherCommunications',
-          `Comm_${form.communicationNo}`,
+          'draftCommunications',
+          `DraftComm_${form.draftCommunicationNumber}`,
           file,
           record?.fileUrl ?? '',
           record?.fileType ?? ''
         )
       else
         await addDocumentWithFile(
-          'santa_communication',
+          'santa_draft_communication',
           { ...form },
-          'OtherCommunications',
-          `Comm_${form.communicationNo}`,
+          'draftCommunications',
+          `DraftComm_${form.draftCommunicationNumber}`,
           file
         )
-      await logActivity(`${isEdit ? 'Updated' : 'Created'} Communication ${form.communicationNo}`)
+      await logActivity(
+        `${isEdit ? 'Updated' : 'Created'} Draft Communication ${form.draftCommunicationNumber}`
+      )
       notify.success(isEdit ? 'Updated' : 'Created')
       onSuccess()
     } catch (err) {
@@ -153,41 +186,87 @@ function CommunicationFormModal({
       }
     >
       <form className="grid grid-cols-2 gap-4">
-        <FormField label="Communication No." required>
-          <Input type="number" min="1" value={form.communicationNo} onChange={set('communicationNo')} placeholder="e.g. 1" />
+        <FormField label="Communication Number" required>
+          <Input type="number" min="1" value={form.draftCommunicationNumber} onChange={set('draftCommunicationNumber')} placeholder="e.g. 1" />
         </FormField>
-        <FormField label="Author">
-          <Input value={form.author} onChange={set('author')} placeholder="Author" />
+        <FormField label="Session Number" required>
+          <SessionSelect value={form.sessionNo} onChange={(v) => setForm((f) => ({ ...f, sessionNo: v }))} />
+        </FormField>
+        <FormField label="Series">
+          <Input value={form.series} onChange={set('series')} placeholder="e.g. Series of 2024" />
+        </FormField>
+        <FormField label="Committee">
+          <Input value={form.committee} onChange={set('committee')} placeholder="e.g. Committee on Finance" />
         </FormField>
         <FormField label="Title" required className="col-span-2">
           <TextArea value={form.title} onChange={set('title')} rows={3} />
         </FormField>
-        <FormField label="Session No.">
-          <SessionSelect value={form.sessionNo} onChange={(v) => setForm((f) => ({ ...f, sessionNo: v }))} />
+        <FormField label="Legislative Term" className="col-span-2">
+          {loadingOfficials ? (
+            <div className="input-field flex items-center justify-center"><Spinner size="sm" /></div>
+          ) : (
+            <Select
+              options={termOptions}
+              value={selectedTerm}
+              onChange={(e) => {
+                setSelectedTerm(e.target.value)
+                setForm((f) => ({ ...f, author: '', coSponsors: [] }))
+              }}
+            />
+          )}
         </FormField>
-        <FormField label="Status">
-          <Input value={form.status} onChange={set('status')} placeholder="Status" />
+        <FormField label="Author">
+          {loadingOfficials ? (
+            <div className="input-field flex items-center justify-center"><Spinner size="sm" /></div>
+          ) : (
+            <Select options={authorOptions} value={form.author} onChange={set('author')} placeholder="Select author" />
+          )}
         </FormField>
-        <FormField label="Tag">
-          <Input value={form.tag} onChange={set('tag')} placeholder="Keywords/tags" />
+        <FormField label="Co-Sponsors">
+          {loadingOfficials ? (
+            <div className="input-field flex items-center justify-center"><Spinner size="sm" /></div>
+          ) : (
+            <div className="border border-slate-200 rounded-lg p-3 max-h-36 overflow-y-auto grid grid-cols-1 gap-1.5">
+              {officialNames.length === 0 ? (
+                <p className="text-xs text-slate-400">No officials for selected term</p>
+              ) : (
+                officialNames.map((name) => (
+                  <label key={name} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.coSponsors.includes(name)}
+                      onChange={() => {
+                        const updated = form.coSponsors.includes(name)
+                          ? form.coSponsors.filter((n) => n !== name)
+                          : [...form.coSponsors, name]
+                        setForm((f) => ({ ...f, coSponsors: updated }))
+                      }}
+                    />
+                    {name}
+                  </label>
+                ))
+              )}
+            </div>
+          )}
+        </FormField>
+        <FormField label="Tag" className="col-span-2">
+          <Input value={form.tag} onChange={set('tag')} />
         </FormField>
         <FormField label="Date Received">
           <Input type="date" value={form.dateReceived} onChange={set('dateReceived')} />
         </FormField>
-        <FormField label="Time Received">
-          <Input type="time" value={form.timeReceived} onChange={set('timeReceived')} />
+        <FormField label="Action">
+          <Select options={ACTION_OPTIONS} value={form.action} onChange={set('action')} />
+        </FormField>
+        <FormField label="Remarks" className="col-span-2">
+          <TextArea value={form.remarks} onChange={set('remarks')} rows={3} />
         </FormField>
         <div className="col-span-2">
           <FileUploadField value={file} onChange={setFile} />
           {isEdit && record?.fileUrl && !file && (
             <p className="text-xs text-slate-500 mt-1.5">
               Current file:{' '}
-              <a
-                href={record.fileUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:underline"
-              >
+              <a href={record.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                 View attached file
               </a>
             </p>
@@ -198,36 +277,34 @@ function CommunicationFormModal({
   )
 }
 
-export function CommunicationsPage() {
+export function DraftCommunicationsPage() {
   const { hiddenColumns, toggleColumn } = useColumnVisibility(columns)
   const user = useAuthStore((s) => s.user)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
-  const { items, loading, loadingMore, hasMore, reload, loadMore, sortField, sortDirection } = useListData<
-    Record<string, unknown>
-  >({
-    endpoint: 'santa_communication',
-    sortParam: 'communicationNo|desc',
-    dataKey: 'communication',
-    limit: 100,
-    searchQuery: debouncedSearch
-  })
-  const [selected, setSelected] = useState<Communication | null>(null)
+  const { items, loading, loadingMore, hasMore, reload, loadMore, sortField, sortDirection } =
+    useListData<Record<string, unknown>>({
+      endpoint: 'santa_draft_communication',
+      sortParam: 'draftCommunicationNumber|desc',
+      dataKey: 'draftCommunication',
+      limit: 100,
+      searchQuery: debouncedSearch
+    })
+  const [selected, setSelected] = useState<DraftCommunication | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const filtered = useMemo(() => {
-    const arr = items as unknown as Communication[]
+    const base = items as unknown as DraftCommunication[]
     const q = debouncedSearch.toLowerCase()
-    const result = !debouncedSearch.trim() ? arr : arr.filter((r) =>
-      Object.values(r as unknown as Record<string, unknown>).some((v) =>
-        String(v ?? '')
-          .toLowerCase()
-          .includes(q)
-      )
-    )
-    return sortByField(result as unknown as Record<string, unknown>[], sortField, sortDirection) as unknown as Communication[]
+    const result = !debouncedSearch.trim()
+      ? base
+      : base.filter(
+          (r) =>
+            r.title?.toLowerCase().includes(q) || r.draftCommunicationNumber?.toLowerCase().includes(q)
+        )
+    return sortByField(result, sortField, sortDirection)
   }, [items, debouncedSearch, sortField, sortDirection])
 
   async function logActivity(activity: string) {
@@ -250,12 +327,12 @@ export function CommunicationsPage() {
     setDeleting(true)
     try {
       await deleteDocumentWithFile(
-        'santa_communication',
+        'santa_draft_communication',
         selected.id,
-        'OtherCommunications',
-        `Comm_${selected.communicationNo}`
+        'draftCommunications',
+        `DraftComm_${selected.draftCommunicationNumber}`
       )
-      await logActivity(`Deleted Communication ${selected.communicationNo}`)
+      await logActivity(`Deleted Draft Communication ${selected.draftCommunicationNumber}`)
       notify.success('Deleted')
       setShowDelete(false)
       setSelected(null)
@@ -271,7 +348,7 @@ export function CommunicationsPage() {
     <Layout>
       <PageContainer>
         <PageHeader
-          title="Other Communications"
+          title="Communications"
           subtitle={`${filtered.length} records`}
           icon={<MessageSquare size={20} />}
           actions={
@@ -312,10 +389,10 @@ export function CommunicationsPage() {
         <div className="flex justify-end mb-4 shrink-0">
           <input
             type="text"
-            placeholder="Search by comm. no., title, author..."
+            placeholder="Search by comm. no., title..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="input-field w-72! py-2!"
+            className="input-field w-56! py-2!"
           />
         </div>
         <div className="card flex flex-col flex-1 min-h-0">
@@ -327,12 +404,12 @@ export function CommunicationsPage() {
             onRowClick={setSelected}
             onRowDoubleClick={() => selected?.fileUrl && window.open(selected.fileUrl, '_blank')}
             loading={loading}
-            emptyMessage="No communication records found"
+            emptyMessage="No draft communication records found"
             loadingMore={loadingMore}
             onEndReached={hasMore ? loadMore : undefined}
           />
         </div>
-        <CommunicationFormModal
+        <DraftCommFormModal
           open={showAdd}
           onClose={() => setShowAdd(false)}
           onSuccess={() => {
@@ -340,9 +417,10 @@ export function CommunicationsPage() {
             reload()
           }}
           logActivity={logActivity}
+          existingItems={filtered}
         />
         {selected && (
-          <CommunicationFormModal
+          <DraftCommFormModal
             open={showEdit}
             onClose={() => setShowEdit(false)}
             onSuccess={() => {
@@ -351,13 +429,14 @@ export function CommunicationsPage() {
               reload()
             }}
             logActivity={logActivity}
+            existingItems={filtered}
             record={selected}
           />
         )}
         <ConfirmDialog
           open={showDelete}
-          title="Delete Communication"
-          message={`Delete communication ${selected?.communicationNo}?`}
+          title="Delete Draft Communication"
+          message={`Delete Draft Communication ${selected?.draftCommunicationNumber}?`}
           confirmLabel="Delete"
           danger
           loading={deleting}

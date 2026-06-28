@@ -11,7 +11,6 @@ import {
   getDocs,
   getDoc,
   setDoc,
-  addDoc,
   doc,
   updateDoc,
   deleteDoc,
@@ -22,15 +21,7 @@ import {
   type QueryDocumentSnapshot,
   type OrderByDirection
 } from 'firebase/firestore'
-
-const FIREBASE_CONFIG = {
-  apiKey: 'AIzaSyBcrCxQEfKHaUKhVoRGDfZ2tSur3roTw0w',
-  authDomain: 'laoaglmts.firebaseapp.com',
-  projectId: 'laoaglmts',
-  storageBucket: 'laoaglmts.appspot.com',
-  serviceEmail: 'adolfotristanjames@gmail.com',
-  servicePassword: 'laoaglmts'
-}
+import { FIREBASE_CONFIG } from './api'
 
 const app = initializeApp(FIREBASE_CONFIG)
 export const auth = getAuth(app)
@@ -52,6 +43,37 @@ export async function ensureAuth(): Promise<void> {
     })
   }
   await _authReady
+}
+
+// ── Counter helpers ──────────────────────────────────────────────────────────
+// All counters live in a single `counters` collection.
+// Document ID = camelCase key, field = `value`.
+
+const COUNTER_KEY_MAP: Record<string, string> = {
+  santa_users: 'usersCount',
+  santa_ordinances: 'ordinancesCount',
+  santa_resolutions: 'resolutionsCount',
+  santa_minutes: 'minutesCount',
+  santa_logs: 'logsCount',
+  santa_officials: 'officialsCount',
+  santa_draft_ordinance: 'draftOrdinanceCount',
+  santa_draft_resolution: 'draftResolutionCount',
+  santa_tricy: 'tricyCount',
+  santa_communication: 'communicationCount',
+  santa_brgy: 'brgyCount',
+  santa_transcript: 'transcriptCount',
+  santa_committee: 'committeeCount',
+  santa_committee_reports: 'committeeReportsCount',
+  santa_review: 'reviewCount',
+  santa_correction: 'correctionCount',
+  santa_incoming_communications: 'incomingCommunicationsCount',
+  santa_other_matters: 'otherMattersCount',
+  santa_judicial: 'judicialCount'
+}
+
+function counterRef(collectionName: string) {
+  const key = COUNTER_KEY_MAP[collectionName] ?? `${collectionName.replace(/^santa_/, '')}Count`
+  return doc(db, 'counters', key)
 }
 
 // ── Firestore CRUD ───────────────────────────────────────────────────────────
@@ -88,10 +110,12 @@ export async function fetchDocs<T>(
     ...(after ? [startAfter(after)] : [])
   ]
   const snap = await getDocs(query(col, ...constraints))
-  const items = snap.docs
-    .filter((d) => d.id !== '--count--')
-    .map((d) => ({ id: d.id, ...d.data() })) as (T & { id: string })[]
-  return { items, lastDoc: snap.docs.at(-1) ?? null, hasMore: pageSize ? snap.docs.length >= pageSize : false }
+  const items = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as (T & { id: string })[]
+  return {
+    items,
+    lastDoc: snap.docs.at(-1) ?? null,
+    hasMore: pageSize ? snap.docs.length >= pageSize : false
+  }
 }
 
 export async function addDocument(
@@ -99,8 +123,9 @@ export async function addDocument(
   data: Record<string, unknown>
 ): Promise<string> {
   await ensureAuth()
-  const ref2 = await addDoc(collection(db, collectionName), data)
-  return ref2.id
+  const newDocRef = doc(collection(db, collectionName))
+  await setDoc(newDocRef, { ...data, id: newDocRef.id })
+  return newDocRef.id
 }
 
 export async function updateDocument(
@@ -150,19 +175,18 @@ export async function addDocumentWithFile(
   file: File | null
 ): Promise<string> {
   await ensureAuth()
-  let filePath = ''
+  let fileUrl = ''
   let fileType = ''
   if (file) {
     const ext = file.name.split('.').pop() ?? ''
-    filePath = await uploadFile(storageFolder, storageFilename, file)
+    fileUrl = await uploadFile(storageFolder, storageFilename, file)
     fileType = `.${ext}`
   }
   const newDocRef = doc(collection(db, collectionName))
-  const fullData = { ...data, filePath, fileType, id: newDocRef.id }
+  const fullData = { ...data, fileUrl, fileType, id: newDocRef.id }
   const batch = writeBatch(db)
   batch.set(newDocRef, fullData)
-  const countsRef = doc(db, collectionName, '--count--')
-  batch.set(countsRef, { count: increment(1) }, { merge: true })
+  batch.set(counterRef(collectionName), { value: increment(1) }, { merge: true })
   try {
     await batch.commit()
     return newDocRef.id
@@ -188,10 +212,10 @@ export async function updateDocumentWithFile(
 ): Promise<void> {
   if (file) {
     const ext = file.name.split('.').pop() ?? ''
-    const filePath = await uploadFile(storageFolder, storageFilename, file)
+    const fileUrl = await uploadFile(storageFolder, storageFilename, file)
     const fileType = `.${ext}`
     try {
-      await updateDocument(collectionName, id, { ...data, filePath, fileType })
+      await updateDocument(collectionName, id, { ...data, fileUrl, fileType })
     } catch (err) {
       try {
         await deleteFile(storageFolder, storageFilename)
@@ -206,7 +230,7 @@ export async function updateDocumentWithFile(
   } else {
     await updateDocument(collectionName, id, {
       ...data,
-      filePath: existingFilePath,
+      fileUrl: existingFilePath,
       fileType: existingFileType
     })
   }
@@ -215,21 +239,22 @@ export async function updateDocumentWithFile(
 export async function deleteDocumentWithFile(
   collectionName: string,
   id: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _storageFolder: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _storageFilename: string
 ): Promise<void> {
   await ensureAuth()
   const docRef = doc(db, collectionName, id)
   const docSnap = await getDoc(docRef)
-  const filePath = docSnap.exists() ? (docSnap.data().filePath as string) : ''
+  const fileUrl = docSnap.exists() ? (docSnap.data().fileUrl as string) : ''
   const batch = writeBatch(db)
   batch.delete(docRef)
-  const countsRef = doc(db, collectionName, '--count--')
-  batch.set(countsRef, { count: increment(-1) }, { merge: true })
+  batch.set(counterRef(collectionName), { value: increment(-1) }, { merge: true })
   await batch.commit()
-  if (filePath) {
+  if (fileUrl) {
     try {
-      await deleteObject(ref(storage, filePath))
+      await deleteObject(ref(storage, fileUrl))
     } catch {}
   }
 }
@@ -242,8 +267,7 @@ export async function addDocumentWithCount(
   const batch = writeBatch(db)
   const newDocRef = doc(collection(db, collectionName))
   batch.set(newDocRef, { ...data, id: newDocRef.id })
-  const countsRef = doc(db, collectionName, '--count--')
-  batch.set(countsRef, { count: increment(1) }, { merge: true })
+  batch.set(counterRef(collectionName), { value: increment(1) }, { merge: true })
   await batch.commit()
   return newDocRef.id
 }
@@ -252,23 +276,32 @@ export async function deleteDocumentWithCount(collectionName: string, id: string
   await ensureAuth()
   const batch = writeBatch(db)
   batch.delete(doc(db, collectionName, id))
-  const countsRef = doc(db, collectionName, '--count--')
-  batch.set(countsRef, { count: increment(-1) }, { merge: true })
+  batch.set(counterRef(collectionName), { value: increment(-1) }, { merge: true })
   await batch.commit()
+}
+
+export async function getAllCounters(): Promise<Record<string, number>> {
+  await ensureAuth()
+  const snap = await getDocs(collection(db, 'counters'))
+  const result: Record<string, number> = {}
+  snap.forEach((d) => {
+    const data = d.data()
+    result[d.id] = typeof data.value === 'number' ? data.value : 0
+  })
+  return result
 }
 
 export async function getCollectionCounts(collectionName: string): Promise<Record<string, number>> {
   await ensureAuth()
-  const countsRef = doc(db, collectionName, '--count--')
-  const snap = await getDoc(countsRef)
+  const cRef = counterRef(collectionName)
+  const snap = await getDoc(cRef)
   if (snap.exists()) {
     const data = snap.data()
-    return { count: typeof data.count === 'number' ? data.count : 0 }
+    return { count: typeof data.value === 'number' ? data.value : 0 }
   }
-
-  // --count-- doesn't exist yet — build it from all existing documents
+  // Counter doc doesn't exist yet — build from existing documents
   const allSnap = await getDocs(collection(db, collectionName))
-  const result = { count: allSnap.docs.filter((d) => d.id !== '--count--').length }
-  await setDoc(countsRef, result)
-  return result
+  const result = { value: allSnap.docs.length }
+  await setDoc(cRef, result)
+  return { count: result.value }
 }

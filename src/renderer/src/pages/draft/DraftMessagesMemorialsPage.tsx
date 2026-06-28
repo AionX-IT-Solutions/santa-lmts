@@ -1,10 +1,10 @@
-﻿import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useListData } from '../../hooks/useListData'
 import { useDebounce } from '../../hooks/useDebounce'
-import { FileEdit, Plus, RefreshCw, Pencil, Trash2, ExternalLink } from 'lucide-react'
+import { Mail, Plus, RefreshCw, Pencil, Trash2, ExternalLink } from 'lucide-react'
 import { notify } from '../../lib/notify'
 import {
-  addDocument, addDocumentWithCount,
+  addDocumentWithCount,
   deleteDocumentWithFile,
   addDocumentWithFile,
   updateDocumentWithFile
@@ -13,13 +13,13 @@ import { useAuthStore } from '../../store/authStore'
 import { Layout, PageContainer } from '../../components/layout/Layout'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { DataTable, Column, useColumnVisibility, ColumnsButton } from '../../components/ui/DataTable'
+import { SessionSelect } from '../../components/ui/SessionSelect'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Modal } from '../../components/ui/Modal'
 import { FormField, Input, Select, TextArea } from '../../components/ui/FormField'
-import { SessionSelect } from '../../components/ui/SessionSelect'
 import { FileUploadField } from '../../components/ui/FileUploadField'
 import { Spinner } from '../../components/ui/Spinner'
-import type { DraftResolution } from '../../types'
+import type { DraftMessagesMemorials } from '../../types'
 import { formatDate, getFullName, toInputDate, sortByField } from '../../lib/utils'
 import { useOfficialsForForm } from '../../hooks/useOfficialsForForm'
 
@@ -30,8 +30,8 @@ const ACTION_OPTIONS = [
   { value: 'Disapproved', label: 'Disapproved' }
 ]
 
-const columns: Column<DraftResolution>[] = [
-  { key: 'draftResolutionNumber', header: 'Draft No.', width: 'w-28' },
+const columns: Column<DraftMessagesMemorials>[] = [
+  { key: 'draftMessageNumber', header: 'Message No.', width: 'w-28' },
   { key: 'sessionNo', header: 'Session No.', width: 'w-28' },
   { key: 'series', header: 'Series', width: 'w-28' },
   { key: 'tag', header: 'Tag', width: 'w-28' },
@@ -46,7 +46,7 @@ const columns: Column<DraftResolution>[] = [
   }
 ]
 
-function DraftResFormModal({
+function DraftMsgFormModal({
   open,
   onClose,
   onSuccess,
@@ -58,8 +58,8 @@ function DraftResFormModal({
   onClose: () => void
   onSuccess: () => void
   logActivity: (a: string) => Promise<void>
-  record?: DraftResolution
-  existingItems: DraftResolution[]
+  record?: DraftMessagesMemorials
+  existingItems: DraftMessagesMemorials[]
 }) {
   const isEdit = !!record
   const [saving, setSaving] = useState(false)
@@ -67,7 +67,7 @@ function DraftResFormModal({
   const { loadingOfficials, selectedTerm, setSelectedTerm, termOptions, officialNames, authorOptions } =
     useOfficialsForForm(open)
   const [form, setForm] = useState({
-    draftResolutionNumber: '',
+    draftMessageNumber: '',
     series: '',
     sessionNo: '',
     committee: '',
@@ -85,7 +85,7 @@ function DraftResFormModal({
       setForm(
         record
           ? {
-              draftResolutionNumber: record.draftResolutionNumber ?? '',
+              draftMessageNumber: record.draftMessageNumber ?? '',
               series: record.series ?? '',
               sessionNo: record.sessionNo ?? '',
               committee: record.committee ?? '',
@@ -98,11 +98,10 @@ function DraftResFormModal({
               remarks: record.remarks ?? ''
             }
           : {
-              draftResolutionNumber: '',
+              draftMessageNumber: '',
               series: '',
               sessionNo: '',
               committee: '',
-              communicationsPetitions: '',
               title: '',
               author: '',
               coSponsors: [],
@@ -121,38 +120,36 @@ function DraftResFormModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.draftResolutionNumber.trim() || !form.title.trim() || !form.sessionNo.trim()) {
+    if (!form.draftMessageNumber.trim() || !form.title.trim() || !form.sessionNo.trim()) {
       notify.error('Draft number, Session number, and Title are required')
       return
     }
-    if (!isEdit && existingItems.some((item) => item.draftResolutionNumber === form.draftResolutionNumber)) {
-      notify.error(`Draft Resolution No. ${form.draftResolutionNumber} already exists`)
+    if (!isEdit && existingItems.some((item) => item.draftMessageNumber === form.draftMessageNumber)) {
+      notify.error(`Draft Message No. ${form.draftMessageNumber} already exists`)
       return
     }
     setSaving(true)
     try {
       if (isEdit)
         await updateDocumentWithFile(
-          'santa_draft_resolution',
+          'santa_draft_message',
           record!.id,
           { ...form },
-          'draftResolutions',
-          `DraftRes_${form.draftResolutionNumber}`,
+          'draftMessages',
+          `DraftMsg_${form.draftMessageNumber}`,
           file,
           record?.fileUrl ?? '',
           record?.fileType ?? ''
         )
       else
         await addDocumentWithFile(
-          'santa_draft_resolution',
+          'santa_draft_message',
           { ...form },
-          'draftResolutions',
-          `DraftRes_${form.draftResolutionNumber}`,
+          'draftMessages',
+          `DraftMsg_${form.draftMessageNumber}`,
           file
         )
-      await logActivity(
-        `${isEdit ? 'Updated' : 'Created'} Draft Resolution ${form.draftResolutionNumber}`
-      )
+      await logActivity(`${isEdit ? 'Updated' : 'Created'} Draft Message/Memorial ${form.draftMessageNumber}`)
       notify.success(isEdit ? 'Updated' : 'Created')
       onSuccess()
     } catch (err) {
@@ -166,29 +163,20 @@ function DraftResFormModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={isEdit ? 'Edit Draft Resolution' : 'Add Draft Resolution'}
+      title={isEdit ? 'Edit Message/Memorial' : 'Add Message/Memorial'}
       size="lg"
       footer={
         <>
-          <button className="btn-secondary" onClick={onClose} disabled={saving}>
-            Cancel
-          </button>
+          <button className="btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="btn-primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? (
-              <>
-                <Spinner size="sm" className="text-white" />
-                Saving...
-              </>
-            ) : (
-              'Save'
-            )}
+            {saving ? (<><Spinner size="sm" className="text-white" />Saving...</>) : 'Save'}
           </button>
         </>
       }
     >
       <form className="grid grid-cols-2 gap-4">
-        <FormField label="Draft Resolution Number" required>
-          <Input type="number" min="1" value={form.draftResolutionNumber} onChange={set('draftResolutionNumber')} placeholder="e.g. 1" />
+        <FormField label="Message Number" required>
+          <Input type="number" min="1" value={form.draftMessageNumber} onChange={set('draftMessageNumber')} placeholder="e.g. 1" />
         </FormField>
         <FormField label="Session Number" required>
           <SessionSelect value={form.sessionNo} onChange={(v) => setForm((f) => ({ ...f, sessionNo: v }))} />
@@ -206,14 +194,7 @@ function DraftResFormModal({
           {loadingOfficials ? (
             <div className="input-field flex items-center justify-center"><Spinner size="sm" /></div>
           ) : (
-            <Select
-              options={termOptions}
-              value={selectedTerm}
-              onChange={(e) => {
-                setSelectedTerm(e.target.value)
-                setForm((f) => ({ ...f, author: '', coSponsors: [] }))
-              }}
-            />
+            <Select options={termOptions} value={selectedTerm} onChange={(e) => { setSelectedTerm(e.target.value); setForm((f) => ({ ...f, author: '', coSponsors: [] })) }} />
           )}
         </FormField>
         <FormField label="Author">
@@ -233,16 +214,12 @@ function DraftResFormModal({
               ) : (
                 officialNames.map((name) => (
                   <label key={name} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={form.coSponsors.includes(name)}
-                      onChange={() => {
-                        const updated = form.coSponsors.includes(name)
-                          ? form.coSponsors.filter((n) => n !== name)
-                          : [...form.coSponsors, name]
-                        setForm((f) => ({ ...f, coSponsors: updated }))
-                      }}
-                    />
+                    <input type="checkbox" checked={form.coSponsors.includes(name)} onChange={() => {
+                      const updated = form.coSponsors.includes(name)
+                        ? form.coSponsors.filter((n) => n !== name)
+                        : [...form.coSponsors, name]
+                      setForm((f) => ({ ...f, coSponsors: updated }))
+                    }} />
                     {name}
                   </label>
                 ))
@@ -265,16 +242,8 @@ function DraftResFormModal({
         <div className="col-span-2">
           <FileUploadField value={file} onChange={setFile} />
           {isEdit && record?.fileUrl && !file && (
-            <p className="text-xs text-slate-500 mt-1.5">
-              Current file:{' '}
-              <a
-                href={record.fileUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:underline"
-              >
-                View attached file
-              </a>
+            <p className="text-xs text-slate-500 mt-1.5">Current file:{' '}
+              <a href={record.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">View attached file</a>
             </p>
           )}
         </div>
@@ -283,48 +252,37 @@ function DraftResFormModal({
   )
 }
 
-export function DraftResolutionsPage() {
+export function DraftMessagesMemorialsPage() {
   const { hiddenColumns, toggleColumn } = useColumnVisibility(columns)
   const user = useAuthStore((s) => s.user)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const { items, loading, loadingMore, hasMore, reload, loadMore, sortField, sortDirection } =
     useListData<Record<string, unknown>>({
-      endpoint: 'santa_draft_resolution',
-      sortParam: 'draftResolutionNumber|desc',
-      dataKey: 'draftResolution',
+      endpoint: 'santa_draft_message',
+      sortParam: 'draftMessageNumber|desc',
+      dataKey: 'draftMessage',
       limit: 100,
       searchQuery: debouncedSearch
     })
-  const [selected, setSelected] = useState<DraftResolution | null>(null)
+  const [selected, setSelected] = useState<DraftMessagesMemorials | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const filtered = useMemo(() => {
-    const base = items as unknown as DraftResolution[]
+    const base = items as unknown as DraftMessagesMemorials[]
     const q = debouncedSearch.toLowerCase()
-    const result = !debouncedSearch.trim()
-      ? base
-      : base.filter(
-          (r) =>
-            r.title?.toLowerCase().includes(q) || r.draftResolutionNumber?.toLowerCase().includes(q)
-        )
+    const result = !debouncedSearch.trim() ? base : base.filter(
+      (r) => r.title?.toLowerCase().includes(q) || r.draftMessageNumber?.toLowerCase().includes(q)
+    )
     return sortByField(result, sortField, sortDirection)
   }, [items, debouncedSearch, sortField, sortDirection])
 
   async function logActivity(activity: string) {
     if (!user) return
     const name = getFullName(user.firstName, user.middleName, user.lastName)
-    const date =
-      new Date().toLocaleDateString('en-PH', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      }) +
-      ' ' +
-      new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
+    const date = new Date().toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + ' ' + new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
     await addDocumentWithCount('santa_logs', { name, activity, date, year: new Date().getFullYear() })
   }
 
@@ -332,13 +290,8 @@ export function DraftResolutionsPage() {
     if (!selected) return
     setDeleting(true)
     try {
-      await deleteDocumentWithFile(
-        'santa_draft_resolution',
-        selected.id,
-        'draftResolutions',
-        `DraftRes_${selected.draftResolutionNumber}`
-      )
-      await logActivity(`Deleted Draft Resolution ${selected.draftResolutionNumber}`)
+      await deleteDocumentWithFile('santa_draft_message', selected.id, 'draftMessages', `DraftMsg_${selected.draftMessageNumber}`)
+      await logActivity(`Deleted Draft Message/Memorial ${selected.draftMessageNumber}`)
       notify.success('Deleted')
       setShowDelete(false)
       setSelected(null)
@@ -354,104 +307,34 @@ export function DraftResolutionsPage() {
     <Layout>
       <PageContainer>
         <PageHeader
-          title="Draft Resolutions"
+          title="Messages and Memorials"
           subtitle={`${filtered.length} records`}
-          icon={<FileEdit size={20} />}
+          icon={<Mail size={20} />}
           actions={
             <>
               <ColumnsButton columns={columns} hiddenColumns={hiddenColumns} onToggle={toggleColumn} />
-              <button className="btn-ghost" onClick={reload}>
-                <RefreshCw size={15} />
-                Refresh
-              </button>
+              <button className="btn-ghost" onClick={reload}><RefreshCw size={15} />Refresh</button>
               {selected && (
                 <>
-                  {selected.fileUrl && (
-                    <button
-                      className="btn-ghost"
-                      onClick={() => window.open(selected.fileUrl, '_blank')}
-                    >
-                      <ExternalLink size={15} />
-                      Open
-                    </button>
-                  )}
-                  <button className="btn-secondary" onClick={() => setShowEdit(true)}>
-                    <Pencil size={15} />
-                    Edit
-                  </button>
-                  <button className="btn-danger" onClick={() => setShowDelete(true)}>
-                    <Trash2 size={15} />
-                    Delete
-                  </button>
+                  {selected.fileUrl && <button className="btn-ghost" onClick={() => window.open(selected.fileUrl, '_blank')}><ExternalLink size={15} />Open</button>}
+                  <button className="btn-secondary" onClick={() => setShowEdit(true)}><Pencil size={15} />Edit</button>
+                  <button className="btn-danger" onClick={() => setShowDelete(true)}><Trash2 size={15} />Delete</button>
                 </>
               )}
-              <button className="btn-primary" onClick={() => setShowAdd(true)}>
-                <Plus size={15} />
-                Add
-              </button>
+              <button className="btn-primary" onClick={() => setShowAdd(true)}><Plus size={15} />Add</button>
             </>
           }
         />
         <div className="flex justify-end mb-4 shrink-0">
-          <input
-            type="text"
-            placeholder="Search by draft no., title, author..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input-field w-56! py-2!"
-          />
+          <input type="text" placeholder="Search by message no., title..." value={search} onChange={(e) => setSearch(e.target.value)} className="input-field w-56! py-2!" />
         </div>
         <div className="card flex flex-col flex-1 min-h-0">
-          <DataTable
-            columns={columns}
-            data={filtered}
-            hiddenColumns={hiddenColumns}
-            selectedId={selected?.id}
-            onRowClick={setSelected}
-            onRowDoubleClick={() => selected?.fileUrl && window.open(selected.fileUrl, '_blank')}
-            loading={loading}
-            emptyMessage="No draft resolution records found"
-            loadingMore={loadingMore}
-            onEndReached={hasMore ? loadMore : undefined}
-          />
+          <DataTable columns={columns} data={filtered} hiddenColumns={hiddenColumns} selectedId={selected?.id} onRowClick={setSelected} onRowDoubleClick={() => selected?.fileUrl && window.open(selected.fileUrl, '_blank')} loading={loading} emptyMessage="No draft message/memorial records found" loadingMore={loadingMore} onEndReached={hasMore ? loadMore : undefined} />
         </div>
-        <DraftResFormModal
-          open={showAdd}
-          onClose={() => setShowAdd(false)}
-          onSuccess={() => {
-            setShowAdd(false)
-            reload()
-          }}
-          logActivity={logActivity}
-          existingItems={filtered}
-        />
-        {selected && (
-          <DraftResFormModal
-            open={showEdit}
-            onClose={() => setShowEdit(false)}
-            onSuccess={() => {
-              setShowEdit(false)
-              setSelected(null)
-              reload()
-            }}
-            logActivity={logActivity}
-            existingItems={filtered}
-            record={selected}
-          />
-        )}
-        <ConfirmDialog
-          open={showDelete}
-          title="Delete Draft Resolution"
-          message={`Delete Draft Resolution ${selected?.draftResolutionNumber}?`}
-          confirmLabel="Delete"
-          danger
-          loading={deleting}
-          onConfirm={handleDelete}
-          onCancel={() => setShowDelete(false)}
-        />
+        <DraftMsgFormModal open={showAdd} onClose={() => setShowAdd(false)} onSuccess={() => { setShowAdd(false); reload() }} logActivity={logActivity} existingItems={filtered} />
+        {selected && <DraftMsgFormModal open={showEdit} onClose={() => setShowEdit(false)} onSuccess={() => { setShowEdit(false); setSelected(null); reload() }} logActivity={logActivity} existingItems={filtered} record={selected} />}
+        <ConfirmDialog open={showDelete} title="Delete Draft Message/Memorial" message={`Delete Draft Message/Memorial ${selected?.draftMessageNumber}?`} confirmLabel="Delete" danger loading={deleting} onConfirm={handleDelete} onCancel={() => setShowDelete(false)} />
       </PageContainer>
     </Layout>
   )
 }
-
-

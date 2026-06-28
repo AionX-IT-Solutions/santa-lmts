@@ -17,7 +17,7 @@ export function Layout({ children }: LayoutProps) {
       }}
     >
       <Sidebar />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <TopHeader />
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {children}
@@ -31,7 +31,7 @@ export function PageContainer({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="animate-fade-in"
-      style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 20, overflow: 'hidden' }}
+      style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 20, overflow: 'hidden', minHeight: 0 }}
     >
       {children}
     </div>

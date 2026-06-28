@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Plus, RefreshCw, Pencil, Trash2, ExternalLink } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { notify } from '../lib/notify'
 import { api } from '../lib/api'
 import { deleteFile } from '../lib/firebase'
 import { useAuthStore } from '../store/authStore'
@@ -12,7 +12,7 @@ import { getFullName } from '../lib/utils'
 
 interface GenericRecord {
   id?: string
-  filePath?: string
+  fileUrl?: string
   fileType?: string
   [key: string]: unknown
 }
@@ -69,7 +69,7 @@ export function GenericModule<T extends GenericRecord>({
       const arr = raw ? ((Object.values(raw).find((v) => Array.isArray(v)) as T[]) ?? []) : []
       setData(arr)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : `Failed to load ${title}`)
+      notify.error(err instanceof Error ? err.message : `Failed to load ${title}`)
     } finally {
       setLoading(false)
     }
@@ -120,12 +120,12 @@ export function GenericModule<T extends GenericRecord>({
       }
       await api.put(`${endpoint}/delete?id=${selected.id}`, selected)
       await logActivity(`Deleted record from ${title}`)
-      toast.success('Record deleted')
+      notify.success('Record deleted')
       setShowDelete(false)
       setSelected(null)
       load()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete')
+      notify.error(err instanceof Error ? err.message : 'Failed to delete')
     } finally {
       setDeleting(false)
     }
@@ -146,10 +146,10 @@ export function GenericModule<T extends GenericRecord>({
               </button>
               {selected && (
                 <>
-                  {selected.filePath && (
+                  {selected.fileUrl && (
                     <button
                       className="btn-ghost"
-                      onClick={() => window.open(String(selected.filePath), '_blank')}
+                      onClick={() => window.open(String(selected.fileUrl), '_blank')}
                     >
                       <ExternalLink size={15} />
                       Open File
@@ -201,7 +201,7 @@ export function GenericModule<T extends GenericRecord>({
             selectedId={selected?.id}
             onRowClick={setSelected}
             onRowDoubleClick={() =>
-              selected?.filePath && window.open(String(selected.filePath), '_blank')
+              selected?.fileUrl && window.open(String(selected.fileUrl), '_blank')
             }
             loading={loading}
             emptyMessage={emptyMessage ?? `No ${title} records found`}

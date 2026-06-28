@@ -2,9 +2,9 @@
 import { useListData } from '../../hooks/useListData'
 import { useDebounce } from '../../hooks/useDebounce'
 import { BookOpen, Plus, RefreshCw, Pencil, Trash2, ExternalLink } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { notify } from '../../lib/notify'
 import {
-  addDocument,
+  addDocument, addDocumentWithCount,
   deleteDocumentWithFile,
   addDocumentWithFile,
   updateDocumentWithFile
@@ -12,15 +12,16 @@ import {
 import { useAuthStore } from '../../store/authStore'
 import { Layout, PageContainer } from '../../components/layout/Layout'
 import { PageHeader } from '../../components/ui/PageHeader'
-import { DataTable, Column } from '../../components/ui/DataTable'
+import { DataTable, Column, useColumnVisibility, ColumnsButton } from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Modal } from '../../components/ui/Modal'
 import { FormField, Input, Select, TextArea } from '../../components/ui/FormField'
+import { useOfficialsForForm } from '../../hooks/useOfficialsForForm'
 import { FileUploadField } from '../../components/ui/FileUploadField'
 import { Spinner } from '../../components/ui/Spinner'
 import type { Minutes } from '../../types'
-import { getFullName } from '../../lib/utils'
+import { getFullName, toInputDate } from '../../lib/utils'
 
 const CATEGORIES = ['Regular Session', 'Special Session']
 
@@ -51,9 +52,23 @@ const columns: Column<Minutes>[] = [
     width: 'w-36',
     render: (r) => <Badge variant="blue">{r.category}</Badge>
   },
-  { key: 'date', header: 'Date', width: 'w-52' },
+  {
+    key: 'date',
+    header: 'Date',
+    width: 'w-52',
+    render: (r) => {
+      if (!r.date) return <span>—</span>
+      const d = new Date(r.date)
+      if (isNaN(d.getTime())) return <span>{r.date}</span>
+      return (
+        <span>
+          {d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })}
+        </span>
+      )
+    }
+  },
   { key: 'time', header: 'Time', width: 'w-24' },
-  { key: 'place', header: 'Place', width: 'w-48' },
+  { key: 'title', header: 'Title', width: 'w-48' },
   { key: 'agenda', header: 'Agenda' },
   { key: 'tag', header: 'Tag', width: 'w-24' },
   { key: 'adjournmentTime', header: 'Adj. Time', width: 'w-24' }
@@ -65,13 +80,14 @@ const EMPTY_FORM = {
   category: 'Regular Session',
   time: '',
   callOrder: '',
-  place: '',
+  title: '',
   agenda: '',
   tag: '',
   present: '',
   absent: '',
   adjournmentTime: '',
-  prayer: ''
+  prayer: '',
+  rollCall: ''
 }
 
 function MinutesFormModal({
@@ -91,6 +107,7 @@ function MinutesFormModal({
   const [saving, setSaving] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [form, setForm] = useState(EMPTY_FORM)
+  const { loadingOfficials, selectedTerm, setSelectedTerm, termOptions, officialNames } = useOfficialsForForm(open)
 
   useEffect(() => {
     if (open) {
@@ -98,17 +115,18 @@ function MinutesFormModal({
         record
           ? {
               sessionNo: record.sessionNo ?? '',
-              date: record.date ?? '',
+              date: toInputDate(record.date),
               category: record.category ?? 'Regular Session',
               time: record.time ?? '',
               callOrder: record.callOrder ?? '',
-              place: record.place ?? '',
+              title: record.title ?? '',
               agenda: record.agenda ?? '',
               tag: record.tag ?? '',
-              present: Array.isArray(record.present) ? record.present.join(', ') : '',
-              absent: Array.isArray(record.absent) ? record.absent.join(', ') : '',
+              present: Array.isArray(record.present) ? record.present.join(', ') : (record.present ?? ''),
+              absent: Array.isArray(record.absent) ? record.absent.join(', ') : (record.absent ?? ''),
               adjournmentTime: record.adjournmentTime ?? '',
-              prayer: record.prayer ?? ''
+              prayer: record.prayer ?? '',
+              rollCall: record.rollCall ?? ''
             }
           : EMPTY_FORM
       )
@@ -121,14 +139,37 @@ function MinutesFormModal({
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
       setForm((f) => ({ ...f, [k]: e.target.value }))
 
+  const presentList = form.present ? form.present.split(', ').filter(Boolean) : []
+  const absentList = form.absent ? form.absent.split(', ').filter(Boolean) : []
+
+  const togglePresent = (name: string) => {
+    if (presentList.includes(name)) {
+      setForm((f) => ({ ...f, present: presentList.filter((n) => n !== name).join(', ') }))
+    } else {
+      setForm((f) => ({
+        ...f,
+        present: [...presentList, name].join(', '),
+        absent: absentList.filter((n) => n !== name).join(', ')
+      }))
+    }
+  }
+
+  const toggleAbsent = (name: string) => {
+    if (absentList.includes(name)) {
+      setForm((f) => ({ ...f, absent: absentList.filter((n) => n !== name).join(', ') }))
+    } else {
+      setForm((f) => ({
+        ...f,
+        absent: [...absentList, name].join(', '),
+        present: presentList.filter((n) => n !== name).join(', ')
+      }))
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.sessionNo.trim()) {
-      toast.error('Session number is required')
-      return
-    }
-    if (!isEdit && !file) {
-      toast.error('Please attach a file')
+      notify.error('Session number is required')
       return
     }
     setSaving(true)
@@ -147,39 +188,40 @@ function MinutesFormModal({
         category: form.category,
         time: form.time,
         callOrder: form.callOrder,
-        place: form.place,
+        title: form.title,
         agenda: form.agenda,
         tag: form.tag,
         present: presentArr,
         absent: absentArr,
         adjournmentTime: form.adjournmentTime,
-        prayer: form.prayer
+        prayer: form.prayer,
+        rollCall: form.rollCall
       }
 
       if (isEdit)
         await updateDocumentWithFile(
-          'laoag_minutes',
+          'santa_minutes',
           record!.id,
           data,
           'minutes',
           `minutesNo._${form.sessionNo}`,
           file,
-          record?.filePath ?? '',
+          record?.fileUrl ?? '',
           record?.fileType ?? ''
         )
       else
         await addDocumentWithFile(
-          'laoag_minutes',
+          'santa_minutes',
           data,
           'minutes',
           `minutesNo._${form.sessionNo}`,
           file
         )
       await logActivity(`${isEdit ? 'Updated' : 'Created'} Minutes Session ${form.sessionNo}`)
-      toast.success(isEdit ? 'Updated' : 'Created')
+      notify.success(isEdit ? 'Updated' : 'Created')
       onSuccess()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save')
+      notify.error(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
     }
@@ -217,31 +259,10 @@ function MinutesFormModal({
           <Select options={SESSION_TYPES} value={form.category} onChange={set('category')} />
         </FormField>
         <FormField label="Date">
-          <Input
-            value={form.date}
-            onChange={set('date')}
-            placeholder="e.g. Tuesday, 7 October 2025"
-          />
+          <Input type="date" value={form.date} onChange={set('date')} />
         </FormField>
         <FormField label="Time">
-          <Input value={form.time} onChange={set('time')} placeholder="e.g. 02:00 pm" />
-        </FormField>
-        <FormField label="Call to Order">
-          <Input value={form.callOrder} onChange={set('callOrder')} placeholder="e.g. 02:00 pm" />
-        </FormField>
-        <FormField label="Adjournment Time">
-          <Input
-            value={form.adjournmentTime}
-            onChange={set('adjournmentTime')}
-            placeholder="e.g. 04:00 pm"
-          />
-        </FormField>
-        <FormField label="Place" className="col-span-2">
-          <Input
-            value={form.place}
-            onChange={set('place')}
-            placeholder="e.g. Sangguniang Panlungsod Session Hall"
-          />
+          <Input type="time" value={form.time} onChange={set('time')} />
         </FormField>
         <FormField label="Agenda" className="col-span-2">
           <TextArea
@@ -251,35 +272,97 @@ function MinutesFormModal({
             rows={3}
           />
         </FormField>
+        <FormField label="Title" className="col-span-2">
+          <Input
+            value={form.title}
+            onChange={set('title')}
+            placeholder="e.g. Minutes of the 24th Regular Session of the Sangguniang Bayan"
+          />
+        </FormField>
+        <FormField label="Call to Order">
+          <Input value={form.callOrder} onChange={set('callOrder')} placeholder="e.g. The 24th Regular Session" />
+        </FormField>
+        <FormField label="Adjournment Time">
+          <Input type="time" value={form.adjournmentTime} onChange={set('adjournmentTime')} />
+        </FormField>
         <FormField label="Tag" className="col-span-2">
           <Input value={form.tag} onChange={set('tag')} placeholder="Keywords/tags" />
         </FormField>
-        <FormField label="Prayer" className="col-span-2">
-          <Input value={form.prayer} onChange={set('prayer')} placeholder="Name of prayer leader" />
+        <FormField label="Invocation" className="col-span-2">
+          <Input value={form.prayer} onChange={set('prayer')} placeholder="e.g. Hon. Jesus B. Bueno Jr. lead the opening prayer." />
         </FormField>
+        <FormField label="Roll Call" className="col-span-2">
+          <TextArea value={form.rollCall} onChange={set('rollCall')} placeholder="e.g. The roll was called and all members of the Sanggunian Bayan were present, thus the presiding officer declared the presence of a quorum." rows={3} />
+        </FormField>
+
+        {/* Legislative Term for Present/Absent */}
+        <FormField label="Legislative Term" className="col-span-2">
+          {loadingOfficials ? (
+            <div className="input-field flex items-center justify-center"><Spinner size="sm" /></div>
+          ) : (
+            <Select
+              options={termOptions}
+              value={selectedTerm}
+              onChange={(e) => {
+                setSelectedTerm(e.target.value)
+                setForm((f) => ({ ...f, present: '', absent: '' }))
+              }}
+            />
+          )}
+        </FormField>
+
         <FormField label="Members Present" className="col-span-2">
-          <TextArea
-            value={form.present}
-            onChange={set('present')}
-            placeholder="Comma-separated names, e.g. Juan dela Cruz, Maria Santos"
-            rows={3}
-          />
+          {loadingOfficials ? (
+            <div className="input-field flex items-center justify-center"><Spinner size="sm" /></div>
+          ) : (
+            <div className="border border-slate-200 rounded-lg p-3 max-h-40 overflow-y-auto grid grid-cols-2 gap-1.5">
+              {officialNames.length === 0 ? (
+                <p className="text-xs text-slate-400 col-span-2">No officials for selected term</p>
+              ) : (
+                officialNames.map((name) => (
+                  <label key={name} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={presentList.includes(name)}
+                      onChange={() => togglePresent(name)}
+                    />
+                    {name}
+                  </label>
+                ))
+              )}
+            </div>
+          )}
         </FormField>
+
         <FormField label="Members Absent" className="col-span-2">
-          <TextArea
-            value={form.absent}
-            onChange={set('absent')}
-            placeholder="Comma-separated names"
-            rows={2}
-          />
+          {loadingOfficials ? (
+            <div className="input-field flex items-center justify-center"><Spinner size="sm" /></div>
+          ) : (
+            <div className="border border-slate-200 rounded-lg p-3 max-h-40 overflow-y-auto grid grid-cols-2 gap-1.5">
+              {officialNames.length === 0 ? (
+                <p className="text-xs text-slate-400 col-span-2">No officials for selected term</p>
+              ) : (
+                officialNames.map((name) => (
+                  <label key={name} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={absentList.includes(name)}
+                      onChange={() => toggleAbsent(name)}
+                    />
+                    {name}
+                  </label>
+                ))
+              )}
+            </div>
+          )}
         </FormField>
         <div className="col-span-2 border-t border-slate-100 pt-3">
-          <FileUploadField value={file} onChange={setFile} required={!isEdit} />
-          {isEdit && record?.filePath && !file && (
+          <FileUploadField value={file} onChange={setFile} />
+          {isEdit && record?.fileUrl && !file && (
             <p className="text-xs text-slate-500 mt-1.5">
               Current file:{' '}
               <a
-                href={record.filePath}
+                href={record.fileUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:underline"
@@ -295,6 +378,7 @@ function MinutesFormModal({
 }
 
 export function MinutesPage() {
+  const { hiddenColumns, toggleColumn } = useColumnVisibility(columns)
   const user = useAuthStore((s) => s.user)
   const [category, setCategory] = useState('Regular Session')
   const filters = useMemo(
@@ -304,7 +388,7 @@ export function MinutesPage() {
   const { items, loading, loadingMore, hasMore, reload, loadMore } = useListData<
     Record<string, unknown>
   >({
-    endpoint: 'laoag_minutes',
+    endpoint: 'santa_minutes',
     sortParam: 'sessionNo|desc',
     dataKey: 'minutes',
     limit: 100,
@@ -345,7 +429,7 @@ export function MinutesPage() {
       }) +
       ' ' +
       new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
-    await addDocument('laoag_logs', { name, activity, date, year: new Date().getFullYear() })
+    await addDocumentWithCount('santa_logs', { name, activity, date, year: new Date().getFullYear() })
   }
 
   async function handleDelete() {
@@ -353,18 +437,18 @@ export function MinutesPage() {
     setDeleting(true)
     try {
       await deleteDocumentWithFile(
-        'laoag_minutes',
+        'santa_minutes',
         selected.id,
         'minutes',
         `minutesNo._${selected.sessionNo}`
       )
       await logActivity(`Deleted Minutes Session ${selected.sessionNo}`)
-      toast.success('Deleted')
+      notify.success('Deleted')
       setShowDelete(false)
       setSelected(null)
       reload()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete')
+      notify.error(err instanceof Error ? err.message : 'Failed to delete')
     } finally {
       setDeleting(false)
     }
@@ -379,16 +463,17 @@ export function MinutesPage() {
           icon={<BookOpen size={20} />}
           actions={
             <>
+              <ColumnsButton columns={columns} hiddenColumns={hiddenColumns} onToggle={toggleColumn} />
               <button className="btn-ghost" onClick={reload}>
                 <RefreshCw size={15} />
                 Refresh
               </button>
               {selected && (
                 <>
-                  {selected.filePath && (
+                  {selected.fileUrl && (
                     <button
                       className="btn-ghost"
-                      onClick={() => window.open(selected.filePath, '_blank')}
+                      onClick={() => window.open(selected.fileUrl, '_blank')}
                     >
                       <ExternalLink size={15} />
                       Open
@@ -459,7 +544,7 @@ export function MinutesPage() {
 
           <input
             type="text"
-            placeholder="Search…"
+            placeholder="Search by session no., title, agenda..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input-field"
@@ -477,9 +562,10 @@ export function MinutesPage() {
           <DataTable
             columns={columns}
             data={filtered}
+            hiddenColumns={hiddenColumns}
             selectedId={selected?.id}
             onRowClick={setSelected}
-            onRowDoubleClick={() => selected?.filePath && window.open(selected.filePath, '_blank')}
+            onRowDoubleClick={() => selected?.fileUrl && window.open(selected.fileUrl, '_blank')}
             loading={loading}
             emptyMessage="No minutes records found"
             loadingMore={loadingMore}
@@ -502,6 +588,7 @@ export function MinutesPage() {
             onClose={() => setShowEdit(false)}
             onSuccess={() => {
               setShowEdit(false)
+              setSelected(null)
               reload()
             }}
             logActivity={logActivity}
