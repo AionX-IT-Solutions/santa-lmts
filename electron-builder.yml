@@ -1,4 +1,4 @@
-appId: com.laoag.lmts
+appId: com.santa.lmts
 productName: LMTS
 directories:
   buildResources: build
@@ -16,7 +16,7 @@ win:
 nsis:
   artifactName: LMTS-Setup-${version}.${ext}
   shortcutName: LMTS
-  uninstallDisplayName: LMTS - Laoag Legislative Management & Tracking System
+  uninstallDisplayName: LMTS - Santa Legislative Management & Tracking System
   createDesktopShortcut: always
 mac:
   entitlementsInherit: build/entitlements.mac.plist
@@ -41,5 +41,5 @@ npmRebuild: false
 publish:
   provider: github
   owner: AionX-IT-Solutions
-  repo: laoag-lmts
+  repo: santa-lmts
   private: false
